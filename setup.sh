@@ -92,7 +92,11 @@ echo "==> Atualizando pip..."
 pip install --upgrade pip --quiet
 
 echo "==> Instalando dependências do requirements.txt..."
-pip install -r requirements.txt --quiet
+# Sem --quiet: é o passo mais demorado, e silêncio aqui esconde tanto o
+# progresso quanto a causa de uma falha. Timeout e retries acima do padrão
+# (15 s / 5) porque o Pi costuma estar no wifi, e queda no meio de um
+# download aparece como SSLEOFError, que não parece problema de rede.
+pip install -r requirements.txt --timeout 60 --retries 10
 
 if ! python3 -c "import picamera2" 2>/dev/null; then
     echo "AVISO: picamera2 ainda não importável no venv. Confira se o apt install acima rodou sem erro."
