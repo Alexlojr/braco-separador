@@ -15,7 +15,7 @@ Este arquivo é para ser lido no Pi, durante o trabalho.
 | base | offset 0, sentido +1, 0–180 |
 | ombro | offset 200, sentido −1, 90–180 |
 | cotovelo | offset 180, sentido +1, 70–160 |
-| garra | 100 aberta, 140 fechada |
+| garra | abre em 105 (90 mm), fecha em 140 | limites da junta 100–140 |
 | limite acoplado | `s2 ≥ 285 − 1,5·s1 + 15`, validado em 5 poses |
 | faixa útil da área de coleta | **115 a 190 mm** do eixo da base |
 
@@ -208,29 +208,17 @@ ficam retas, com ~100 mm de ponta a ponta. A peça tem extremidades de 50 mm,
 então passa com folga de 50 mm e a aproximação vertical é viável. Era o único
 item que podia inviabilizar a aproximação por cima.
 
-Sobrou um detalhe, que é o próximo número a medir:
+A **operação abre em 105**, que dá 90 mm sem forçar. O 100 fica como
+`lim_min` e nada o usa: ali as pinças ficam retas, o quadrilátero da garra
+para no ponto de inflexão, a direção de fechamento fica ambígua e um esbarrão
+vira o elo para o outro lado — com o comando de fechar empurrando para o lado
+errado. Os 5° de recuo saem desse ponto.
 
-```
-SET 3 120
-```
-
-Em 100 as pinças ficam **retas**, que é a posição em que o quadrilátero da
-garra está esticado. Ali o mecanismo fica num ponto de inflexão: a direção de
-fechamento é ambígua, e um esbarrão pode virar o elo para o outro lado — aí o
-comando de fechar empurra para o lado errado e trava. Abrir até esse ponto a
-cada ciclo é pedir para isso acontecer.
-
-Então o `garra_aberta_graus` de operação deve ficar **antes** dos 100, com
-abertura suficiente para os 50 mm e alguma margem. Meça a abertura em 120: se
-der 60 mm ou mais, `garra_aberta_graus` passa a ser 120, e o 100 continua como
-`lim_min` — reserva para quando precisar, não posição de trabalho.
-
-Até medir, a configuração abre em 100, que funciona.
-
-**A pegada do dedo na descida.** Com 100 mm de envergadura, cada dedo avança
-50 mm para o lado do centro de preensão. Na descida sobre uma peça encostada
+**A pegada do dedo na descida.** Com 90 mm de abertura, cada dedo avança
+45 mm para o lado do centro de preensão. Na descida sobre uma peça encostada
 na borda da área de coleta, ou perto da parede do depósito, o dedo chega lá
-antes da peça. É outro motivo para operar com a garra menos aberta.
+antes da peça. Se isso aparecer, a saída é fechar um pouco o `garra_aberta_graus`:
+a peça precisa de 50 mm, então há 40 mm para gastar.
 
 **O modelo ainda usa classes COCO.** O `coletar.py` detecta com os pesos base
 do YOLOv8n. Treinar nos objetos do projeto é a etapa seguinte, e não bloqueia

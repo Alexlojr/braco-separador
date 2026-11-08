@@ -126,6 +126,10 @@ int pulso_max[NUM_SERVOS] = {492, 492, 492, 492};
 // Abaixo de 70 o cotovelo gira para dentro e encosta na estrutura. A garra
 // é invertida: 100 abre, 140 fecha. Curso de 40°, achado em 08/11/2026
 // depois de ajustar a montagem — antes eram 17° (120 a 137).
+//
+// O 100 é FIM DE CURSO, não posição de trabalho: ali as pinças ficam retas
+// e o quadrilátero da garra para no ponto de inflexão. A operação abre em
+// 105 (90 mm de abertura), que é o garra_aberta_graus do braco.json.
 float lim_min[NUM_SERVOS] = {  0.0, 90.0,  70.0,  100.0};
 float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 140.0};
 
@@ -136,8 +140,8 @@ float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 140.0};
 // energização. Ligue com o braço já perto dela.
 //
 //   base 90 aponta para a área de coleta | ombro 140 e cotovelo 120 recolhem
-//   sem forçar | garra 105 fica 5° dentro do aberto, porque encostar no fim
-//   de curso toda vez que liga não é boa ideia.
+//   sem forçar | garra 105 fica 5° dentro do fim de curso, porque encostar
+//   nele toda vez que liga não é boa ideia.
 float pose_repouso[NUM_SERVOS] = {90.0, 140.0, 120.0, 105.0};
 
 float atual[NUM_SERVOS];      // posição sendo escrita agora (segue a curva)
@@ -211,7 +215,7 @@ float   sweep_de = 0, sweep_ate = 0;
 const int16_t demo_passos[][NUM_SERVOS] PROGMEM = {
   // base  ombro  cotovelo  garra
   {   -1,   130,     140,     -1 },   //  1 recolhe
-  {   -1,    -1,      -1,    100 },   //  2 abre a garra
+  {   -1,    -1,      -1,    105 },   //  2 abre a garra
   {   90,    -1,      -1,     -1 },   //  3 gira a base para a peça
   {   -1,   160,     120,     -1 },   //  4 estende por cima da peça
   {   -1,   170,     110,     -1 },   //  5 desce até a peça
@@ -220,7 +224,7 @@ const int16_t demo_passos[][NUM_SERVOS] PROGMEM = {
   {   -1,   130,     140,     -1 },   //  8 recolhe para girar
   {   40,    -1,      -1,     -1 },   //  9 gira a base para o depósito
   {   -1,   160,     120,     -1 },   // 10 estende sobre o depósito
-  {   -1,    -1,      -1,    100 },   // 11 ABRE a garra, solta a peça
+  {   -1,    -1,      -1,    105 },   // 11 ABRE a garra, solta a peça
   {   -1,   130,     140,     -1 },   // 12 recolhe
   {   90,   140,     120,     -1 },   // 13 volta ao repouso
 };

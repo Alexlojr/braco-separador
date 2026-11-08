@@ -53,7 +53,7 @@ LIMITES = {
 }
 NOMES = {0: "base", 1: "ombro", 2: "cotovelo", 3: "garra"}
 
-GARRA_ABERTA = 100
+GARRA_ABERTA = 105
 GARRA_FECHADA = 140
 
 # ---------------------------------------------------------------------------
