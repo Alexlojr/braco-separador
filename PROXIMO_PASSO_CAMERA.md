@@ -203,20 +203,34 @@ python coletar.py
 
 ## O que ainda está em aberto
 
-**A abertura da garra.** O curso passou para 40° (100 a 140) em 08/11/2026,
-depois de ajustar a montagem. A peça tem extremidades de 50 mm e tronco de
-20 mm, e a aproximação é vertical — os dedos precisam passar **por fora dos
-50 mm** antes de descer no tronco.
+**A abertura da garra — RESOLVIDO em 08/11/2026.** Em `SET 3 100` as pinças
+ficam retas, com ~100 mm de ponta a ponta. A peça tem extremidades de 50 mm,
+então passa com folga de 50 mm e a aproximação vertical é viável. Era o único
+item que podia inviabilizar a aproximação por cima.
+
+Sobrou um detalhe, que é o próximo número a medir:
 
 ```
-SET 3 100
+SET 3 120
 ```
 
-e meça a abertura entre os dedos com régua. **Se não passar de 50 mm, a
-aproximação vertical não funciona com essa peça**, e aí é afinar as
-extremidades ou aproximar por um lado só.
+Em 100 as pinças ficam **retas**, que é a posição em que o quadrilátero da
+garra está esticado. Ali o mecanismo fica num ponto de inflexão: a direção de
+fechamento é ambígua, e um esbarrão pode virar o elo para o outro lado — aí o
+comando de fechar empurra para o lado errado e trava. Abrir até esse ponto a
+cada ciclo é pedir para isso acontecer.
 
-Isso é independente da câmera e pode ser medido a qualquer momento.
+Então o `garra_aberta_graus` de operação deve ficar **antes** dos 100, com
+abertura suficiente para os 50 mm e alguma margem. Meça a abertura em 120: se
+der 60 mm ou mais, `garra_aberta_graus` passa a ser 120, e o 100 continua como
+`lim_min` — reserva para quando precisar, não posição de trabalho.
+
+Até medir, a configuração abre em 100, que funciona.
+
+**A pegada do dedo na descida.** Com 100 mm de envergadura, cada dedo avança
+50 mm para o lado do centro de preensão. Na descida sobre uma peça encostada
+na borda da área de coleta, ou perto da parede do depósito, o dedo chega lá
+antes da peça. É outro motivo para operar com a garra menos aberta.
 
 **O modelo ainda usa classes COCO.** O `coletar.py` detecta com os pesos base
 do YOLOv8n. Treinar nos objetos do projeto é a etapa seguinte, e não bloqueia
