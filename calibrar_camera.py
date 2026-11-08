@@ -152,7 +152,7 @@ def coletar_manual():
     return pontos
 
 
-def pedir_pontos_conferencia():
+def pedir_pontos_conferencia(frame=None):
     """
     Pontos medidos com régua que NÃO entram no cálculo da matriz.
 
@@ -160,8 +160,18 @@ def pedir_pontos_conferencia():
     calibração, a matriz passa exatamente por eles por construção, então o
     residual lá é sempre zero e não distingue calibração boa de ruim.
     """
-    print("\nPontos de conferência (Enter vazio encerra).")
-    print("Para cada um: o pixel na imagem e a medida de régua em mm.")
+    print("\nPontos de conferência — é este o erro que vale, e que vai no")
+    print("relatório. O residual dos 4 cantos é zero por construção.")
+    print("\nMarque 2 ou 3 pontos na área de coleta (um lápis serve), meça")
+    print("cada um com régua a partir do eixo da base, e informe abaixo.")
+    print("Enter vazio encerra.\n")
+
+    if frame is not None:
+        return _conferencia_clicando(frame)
+    return _conferencia_digitando()
+
+
+def _conferencia_digitando():
     pixels, milimetros = [], []
     while True:
         bruto = input(f"  ponto {len(pixels) + 1} — u,v,x,y: ").strip()
@@ -174,6 +184,57 @@ def pedir_pontos_conferencia():
             continue
         pixels.append((u, v))
         milimetros.append((x, y))
+    return pixels, milimetros
+
+
+def _conferencia_clicando(frame):
+    """
+    Clica o ponto na imagem e digita só os milímetros.
+
+    A versão anterior pedia o pixel junto, e não havia como saber o pixel sem
+    a imagem aberta na frente. Na prática isso fazia pular a conferência, que
+    é justamente a única medida que valida a calibração.
+    """
+    import cv2
+
+    pixels, milimetros = [], []
+    janela = "Clique no ponto de conferencia (ESC encerra)"
+    clique = {}
+
+    def ao_clicar(evento, x, y, flags, param):
+        if evento == cv2.EVENT_LBUTTONDOWN:
+            clique["p"] = (float(x), float(y))
+
+    cv2.namedWindow(janela)
+    cv2.setMouseCallback(janela, ao_clicar)
+
+    while True:
+        clique.pop("p", None)
+        print(f"  ponto {len(pixels) + 1}: clique na janela (ESC encerra)")
+        while "p" not in clique:
+            vis = frame.copy()
+            for i, (cx, cy) in enumerate(pixels, 1):
+                cv2.circle(vis, (int(cx), int(cy)), 6, (255, 0, 0), -1)
+                cv2.putText(vis, str(i), (int(cx) + 10, int(cy)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+            cv2.imshow(janela, vis)
+            if (cv2.waitKey(20) & 0xFF) == 27:
+                cv2.destroyAllWindows()
+                return pixels, milimetros
+
+        u, v = clique["p"]
+        print(f"    pixel ({u:.0f}, {v:.0f})")
+        bruto = input("    régua, x,y em mm (Enter descarta este ponto): ").strip()
+        if not bruto:
+            continue
+        try:
+            x, y = (float(t) for t in bruto.split(","))
+        except (ValueError, TypeError):
+            print("    formato inválido, use x,y — ex: -10,150")
+            continue
+        pixels.append((u, v))
+        milimetros.append((x, y))
+
     return pixels, milimetros
 
 
@@ -276,7 +337,7 @@ def main():
     print(f"\nSalvo em: {args.saida}")
 
     if args.conferir:
-        pix_c, mm_c = pedir_pontos_conferencia()
+        pix_c, mm_c = pedir_pontos_conferencia(frame)
         if pix_c:
             medio, maximo, cada = avaliar_com_pontos(h, pix_c, mm_c)
             print("\nErro nos pontos de conferência:")
