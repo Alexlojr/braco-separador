@@ -15,7 +15,7 @@ Este arquivo é para ser lido no Pi, durante o trabalho.
 | base | offset 0, sentido +1, 0–180 |
 | ombro | offset 200, sentido −1, 90–180 |
 | cotovelo | offset 180, sentido +1, 70–160 |
-| garra | 120 aberta, 137 fechada |
+| garra | 100 aberta, 140 fechada |
 | limite acoplado | `s2 ≥ 285 − 1,5·s1 + 15`, validado em 5 poses |
 | faixa útil da área de coleta | **115 a 190 mm** do eixo da base |
 
@@ -203,18 +203,18 @@ python coletar.py
 
 ## O que ainda está em aberto
 
-**A abertura da garra.** O curso é de 17° (120 a 137). A peça tem extremidades
-de 50 mm e tronco de 20 mm, e a aproximação é vertical — os dedos precisam
-passar **por fora dos 50 mm** antes de descer no tronco.
+**A abertura da garra.** O curso passou para 40° (100 a 140) em 08/11/2026,
+depois de ajustar a montagem. A peça tem extremidades de 50 mm e tronco de
+20 mm, e a aproximação é vertical — os dedos precisam passar **por fora dos
+50 mm** antes de descer no tronco.
 
 ```
-SET 3 120
+SET 3 100
 ```
 
 e meça a abertura entre os dedos com régua. **Se não passar de 50 mm, a
 aproximação vertical não funciona com essa peça**, e aí é afinar as
-extremidades ou aumentar o curso da garra, se houver folga mecânica além do
-120.
+extremidades ou aproximar por um lado só.
 
 Isso é independente da câmera e pode ser medido a qualquer momento.
 

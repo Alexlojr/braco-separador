@@ -297,8 +297,8 @@ checa(cmds[0] == f"SET {calib.garra.canal} 125.0", f"garra aberta explicita igno
 checa(cmds[1] == f"SET {calib.garra.canal} 133.0", f"garra fechada explicita ignorada: {cmds[1]}")
 
 # ordem contraria a da montagem atual (aberta > fechada) tambem funciona:
-# nada no caminho assume qual extremo fecha. Na garra real e 120 aberta /
-# 137 fechada, ou seja aberta < fechada, que ja e o contrario do intuitivo.
+# nada no caminho assume qual extremo fecha. Na garra real e 100 aberta /
+# 140 fechada, ou seja aberta < fechada, que ja e o contrario do intuitivo.
 p_inv = dict(base_params, garra_aberta=135.0, garra_fechada=122.0)
 c_inv = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_inv))
 cmds = [e.comandos[0] for e in c_inv.planejar(*alvo_mm) if "garra" in e.descricao.lower()]

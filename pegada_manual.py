@@ -49,12 +49,12 @@ LIMITES = {
     0: (0, 180),      # base
     1: (90, 180),     # ombro
     2: (70, 160),     # cotovelo
-    3: (120, 137),   # garra
+    3: (100, 140),   # garra
 }
 NOMES = {0: "base", 1: "ombro", 2: "cotovelo", 3: "garra"}
 
-GARRA_ABERTA = 120
-GARRA_FECHADA = 137
+GARRA_ABERTA = 100
+GARRA_FECHADA = 140
 
 # ---------------------------------------------------------------------------
 # A SEQUÊNCIA. É isto que você edita.

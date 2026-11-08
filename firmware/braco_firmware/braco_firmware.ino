@@ -124,9 +124,10 @@ int pulso_max[NUM_SERVOS] = {492, 492, 492, 492};
 // testa_limites_sincronizados() falha se os três divergirem.
 //
 // Abaixo de 70 o cotovelo gira para dentro e encosta na estrutura. A garra
-// é invertida: 120 abre, 137 fecha.
-float lim_min[NUM_SERVOS] = {  0.0, 90.0,  70.0,  120.0};
-float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 137.0};
+// é invertida: 100 abre, 140 fecha. Curso de 40°, achado em 08/11/2026
+// depois de ajustar a montagem — antes eram 17° (120 a 137).
+float lim_min[NUM_SERVOS] = {  0.0, 90.0,  70.0,  100.0};
+float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 140.0};
 
 // Pose de repouso do HOME.
 //
@@ -135,9 +136,9 @@ float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 137.0};
 // energização. Ligue com o braço já perto dela.
 //
 //   base 90 aponta para a área de coleta | ombro 140 e cotovelo 120 recolhem
-//   sem forçar | garra 123 fica 3° dentro do aberto, porque encostar no fim
+//   sem forçar | garra 105 fica 5° dentro do aberto, porque encostar no fim
 //   de curso toda vez que liga não é boa ideia.
-float pose_repouso[NUM_SERVOS] = {90.0, 140.0, 120.0, 123.0};
+float pose_repouso[NUM_SERVOS] = {90.0, 140.0, 120.0, 105.0};
 
 float atual[NUM_SERVOS];      // posição sendo escrita agora (segue a curva)
 float alvo[NUM_SERVOS];       // para onde o movimento está indo
@@ -153,13 +154,15 @@ float velocidade = 160.0;      // graus por segundo, MÉDIA (ver suaviza())
 // carrega massa e não precisa seguir caminho nenhum: não há motivo para andar
 // no ritmo do braço.
 //
-// 0 = SEM SUAVIZAÇÃO, e é o padrão. O curso da garra é de 17° (120 a 137),
-// que são só 37 contagens do PCA9685. Suavizado, o início do movimento — onde
-// a smootherstep tem derivada zero — fica abaixo de uma contagem, e o pulso
-// escrito não muda: a garra treme e não fecha. Era esse o defeito.
+// 0 = SEM SUAVIZAÇÃO, e é o padrão.
 //
-// O preço é o impacto nas duas pontas, inaceitável para o braço e irrelevante
-// para 17° de garra.
+// O defeito que isso corrige foi diagnosticado quando o curso era de 17°,
+// ou 37 contagens do PCA9685: suavizado, o início do movimento — onde a
+// smootherstep tem derivada zero — ficava abaixo de uma contagem, o pulso
+// escrito não mudava, e a garra tremia sem fechar. O curso hoje é de 40°
+// (87 contagens) e a margem é maior, mas o padrão continua 0: a garra não
+// carrega massa nem segue caminho, e o impacto nas duas pontas, inaceitável
+// para o braço, aqui não tem consequência.
 float velocidade_garra = 0.0;
 const float VEL_GARRA_MAX = 1000.0;
 
@@ -208,16 +211,16 @@ float   sweep_de = 0, sweep_ate = 0;
 const int16_t demo_passos[][NUM_SERVOS] PROGMEM = {
   // base  ombro  cotovelo  garra
   {   -1,   130,     140,     -1 },   //  1 recolhe
-  {   -1,    -1,      -1,    120 },   //  2 abre a garra
+  {   -1,    -1,      -1,    100 },   //  2 abre a garra
   {   90,    -1,      -1,     -1 },   //  3 gira a base para a peça
   {   -1,   160,     120,     -1 },   //  4 estende por cima da peça
   {   -1,   170,     110,     -1 },   //  5 desce até a peça
-  {   -1,    -1,      -1,    137 },   //  6 FECHA a garra
+  {   -1,    -1,      -1,    140 },   //  6 FECHA a garra
   {   -1,   150,     130,     -1 },   //  7 levanta com a peça
   {   -1,   130,     140,     -1 },   //  8 recolhe para girar
   {   40,    -1,      -1,     -1 },   //  9 gira a base para o depósito
   {   -1,   160,     120,     -1 },   // 10 estende sobre o depósito
-  {   -1,    -1,      -1,    120 },   // 11 ABRE a garra, solta a peça
+  {   -1,    -1,      -1,    100 },   // 11 ABRE a garra, solta a peça
   {   -1,   130,     140,     -1 },   // 12 recolhe
   {   90,   140,     120,     -1 },   // 13 volta ao repouso
 };
