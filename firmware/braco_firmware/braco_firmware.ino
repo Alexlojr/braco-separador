@@ -139,10 +139,18 @@ float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 140.0};
 // suavizar — é o movimento mais brusco do sistema, e acontece a cada
 // energização. Ligue com o braço já perto dela.
 //
-//   base 90 aponta para a área de coleta | ombro 140 e cotovelo 120 recolhem
-//   sem forçar | garra 105 fica 5° dentro do fim de curso, porque encostar
-//   nele toda vez que liga não é boa ideia.
-float pose_repouso[NUM_SERVOS] = {90.0, 140.0, 120.0, 105.0};
+//   base 90 aponta para a área de coleta | ombro 120 e cotovelo 120 deixam
+//   a garra a 147 mm de raio e 156 mm de altura — 31 mm mais recuada que a
+//   pose antiga de 140/120 | garra 105 fica 5° dentro do fim de curso,
+//   porque encostar nele toda vez que liga não é boa ideia.
+//
+// Recolher o braço APROXIMA e SOBE ao mesmo tempo: é a mesma dobra, e o
+// limite acoplado proíbe o resto. Não existe pose recuada e baixa.
+//
+// 120/120 fica exatamente no limite acoplado calculado (s2 >= 285 - 1,5·s1
+// + 15 dá 120 para s1=120). Os 15° são a margem do modelo, então sobra
+// essa margem e não mais: não recue o ombro além de 120 sem medir.
+float pose_repouso[NUM_SERVOS] = {90.0, 120.0, 120.0, 105.0};
 
 float atual[NUM_SERVOS];      // posição sendo escrita agora (segue a curva)
 float alvo[NUM_SERVOS];       // para onde o movimento está indo
@@ -226,7 +234,7 @@ const int16_t demo_passos[][NUM_SERVOS] PROGMEM = {
   {   -1,   160,     120,     -1 },   // 10 estende sobre o depósito
   {   -1,    -1,      -1,    105 },   // 11 ABRE a garra, solta a peça
   {   -1,   130,     140,     -1 },   // 12 recolhe
-  {   90,   140,     120,     -1 },   // 13 volta ao repouso
+  {   90,   120,     120,     -1 },   // 13 volta ao repouso
 };
 const uint8_t DEMO_N = sizeof(demo_passos) / sizeof(demo_passos[0]);
 

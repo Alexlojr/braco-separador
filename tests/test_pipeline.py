@@ -219,8 +219,8 @@ for etapa in controlador.executar(leitura.x_mm, leitura.y_mm):
     if not serial.parado:
         cortadas.append((etapa.descricao, serial.pendente_s))
 
-checa(len(etapas) == 8, f"a coleta deveria ter 8 etapas, tem {len(etapas)}")
-checa(len(serial.linhas) == 16, f"deveriam sair 16 comandos, sairam {len(serial.linhas)}")
+checa(len(etapas) == 9, f"a coleta deveria ter 9 etapas, tem {len(etapas)}")
+checa(len(serial.linhas) == 19, f"deveriam sair 19 comandos, sairam {len(serial.linhas)}")
 checa(all(l.startswith("SET ") or l == "HOME" for l in serial.linhas),
       "todo comando deveria ser SET ou HOME")
 checa(serial.linhas[-1] == "HOME", "a sequencia deveria terminar em HOME")
@@ -315,6 +315,83 @@ except PoseInalcancavel as e:
     checa("config" in str(e).lower(),
           f"a mensagem deveria apontar para a config, veio: {e}")
 
+
+# --- entrada lateral: a garra nao pode descer sobre o chapeu da peca ------
+#
+# A peca tem um chapeu de 50 mm sobre um tronco de 20 mm, entao a sequencia
+# desce AO LADO e entra de fora para dentro. Tres propriedades fazem isso
+# funcionar, e as tres sao faceis de quebrar sem perceber ao mexer no
+# planejar():
+#
+#   1. a descida acontece num raio MENOR que o do alvo, com folga de pelo
+#      menos recuo_minimo (metade do chapeu);
+#   2. a base nao se move na etapa de entrada. Se ela girar, a garra chega
+#      de lado em vez de de frente, e os dedos batem na peca com a face
+#      externa em vez de passarem por fora dela;
+#   3. a entrada SOBE. Com a visao errando ate 2,2 mm, errar para baixo
+#      empurra a peca contra a mesa; errar para cima so fecha a garra um
+#      pouco acima do meio do tronco.
+import math as _math
+
+c_lat = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**base_params))
+etapas_lat = c_lat.planejar(0.0, 160.0)
+
+def _angulos(etapa):
+    """{canal: angulo} dos comandos SET de uma etapa."""
+    saida = {}
+    for cmd in etapa.comandos:
+        partes = cmd.split()
+        if partes[0] == "SET":
+            saida[int(partes[1])] = float(partes[2])
+    return saida
+
+descida = next(e for e in etapas_lat if "ao lado" in e.descricao)
+entrada = next(e for e in etapas_lat if "tronco" in e.descricao)
+
+a_descida, a_entrada = _angulos(descida), _angulos(entrada)
+checa(a_descida[calib.base.canal] == a_entrada[calib.base.canal],
+      f"a base nao pode girar na entrada: {a_descida[calib.base.canal]} -> "
+      f"{a_entrada[calib.base.canal]}")
+
+# a descida fica mais perto do eixo, e por pelo menos o recuo minimo.
+# Volta de angulo de servo para angulo matematico e roda a cinematica
+# direta: e a unica forma de testar o PLANO, e nao a aritmetica que o gerou.
+def _ponto(angulos):
+    def mat(servo):
+        return (angulos[servo.canal] - servo.offset) / servo.sentido
+    ombro = mat(calib.ombro)
+    cotovelo = mat(calib.cotovelo)
+    # Num braco de paralelogramo o servo do cotovelo manda no angulo ABSOLUTO
+    # do antebraco, enquanto a cinematica direta quer o relativo ao braco.
+    # Esquecer de descontar o ombro aqui faz o teste calcular um ponto que
+    # existe, mas nao e o planejado - e o erro cresce com a altura do ombro,
+    # entao parece aleatorio.
+    if calib.acoplamento_cotovelo == "absoluto":
+        cotovelo -= ombro
+    return braco.cinematica_direta(mat(calib.base), ombro, cotovelo)
+
+pose_descida = _ponto(a_descida)
+pose_entrada = _ponto(a_entrada)
+r_descida = _math.hypot(pose_descida[0], pose_descida[1])
+r_entrada = _math.hypot(pose_entrada[0], pose_entrada[1])
+checa(r_entrada - r_descida >= base_params["recuo_minimo"] - 1.0,
+      f"a descida deveria ficar ao menos {base_params['recuo_minimo']:.0f} mm "
+      f"antes do alvo, ficou {r_entrada - r_descida:.1f} mm")
+checa(pose_entrada[2] > pose_descida[2],
+      f"a entrada tem que SUBIR: desceu a {pose_descida[2]:.1f} mm e entrou a "
+      f"{pose_entrada[2]:.1f} mm")
+
+# alvo que nao aceita o recuo minimo e recusado, e a mensagem diz por que
+p_colado = dict(base_params, recuo_entrada=90.0, recuo_minimo=90.0)
+c_colado = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_colado))
+try:
+    c_colado.planejar(0.0, 160.0)
+    checa(False, "recuo minimo inalcancavel deveria levantar PoseInalcancavel")
+except PoseInalcancavel as e:
+    checa(e.motivo == PoseInalcancavel.ENVELOPE,
+          f"motivo deveria ser ENVELOPE, veio {e.motivo}")
+    checa("chapéu" in str(e) or "chapeu" in str(e),
+          f"a mensagem deveria explicar por que nao recua menos, veio: {e}")
 
 for f in falhas:
     print(f"  FALHA: {f}")

@@ -16,6 +16,7 @@ Este arquivo é para ser lido no Pi, durante o trabalho.
 | ombro | offset 200, sentido −1, 90–180 |
 | cotovelo | offset 180, sentido +1, 70–160 |
 | garra | abre em 105 (90 mm), fecha em 140 | limites da junta 100–140 |
+| repouso | base 90, ombro 120, cotovelo 120, garra 105 |
 | limite acoplado | `s2 ≥ 285 − 1,5·s1 + 15`, validado em 5 poses |
 | faixa útil da área de coleta | **115 a 190 mm** do eixo da base |
 
@@ -183,6 +184,28 @@ imprime os `SET` que seriam enviados, sem mover nada.
 
 O que olhar: se os ângulos fazem sentido, e se aparece alguma recusa de pose.
 Recusa aqui é melhor que descobrir depois com o braço em movimento.
+
+A sequência tem **9 etapas**, e não é top-down:
+
+```
+abre -> sobrevoa 30 mm ANTES do alvo -> desce ao lado, a 20 mm ->
+entra no tronco subindo -> fecha -> sobe -> leva -> solta -> HOME
+```
+
+O desvio existe por causa do chapéu de 50 mm da peça: descer no tronco é
+descer no chapéu. O recuo é **radial**, mesmo ângulo de base, então na etapa
+de entrada a base fica parada e a garra avança na direção em que os dedos
+abrem — por fora do chapéu, não por cima.
+
+A altura do sobrevoo é escolhida na hora. Perto da base o envelope é um
+corredor estreito (num raio de 100 mm o braço só alcança de 20 a 40 mm de
+altura), então pedir 70 mm fixo recusaria os alvos próximos. O `--dry-run`
+imprime a altura que usou em cada caso.
+
+Alvo que não aceita nem o recuo mínimo de 25 mm — metade do chapéu — é
+recusado. Recuar menos seria descer sobre o chapéu, que é o que a sequência
+existe para evitar. A cobertura da área de coleta é a mesma de antes, 55%
+dos pontos, e o que ficou de fora já estava de fora pelo alcance.
 
 ---
 

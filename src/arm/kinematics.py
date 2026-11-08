@@ -438,6 +438,9 @@ def carregar_config(caminho="config/braco.json"):
         "z_pega": float(coleta.get("z_pega", 15.0)),
         "z_aproximacao": float(coleta.get("z_aproximacao", 70.0)),
         "z_transporte": float(coleta.get("z_transporte", 80.0)),
+        "recuo_entrada": float(coleta.get("recuo_entrada_mm", 30.0)),
+        "recuo_minimo": float(coleta.get("recuo_minimo_mm", 25.0)),
+        "subida_entrada": float(coleta.get("subida_entrada_mm", 5.0)),
         "deposito": tuple(coleta.get("deposito_xy", (-80.0, 100.0))),
         "pausa_s": float(coleta.get("pausa_s", 0.25)),
         # None deixa a coleta cair no mínimo/máximo da junta. Explícito é

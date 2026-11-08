@@ -5,17 +5,29 @@ Este módulo é a cola entre visão e braço. Ele não abre câmera nem porta
 serial: recebe as duas coisas prontas por injeção, o que deixa tudo
 testável sem hardware (basta passar um mock com `.write()`).
 
-A sequência de pega é a clássica de "top-down grasp":
+A sequência de pega NÃO é a clássica de "top-down grasp", e o motivo é a
+peça: ela tem um chapéu de 50 mm em cima de um tronco de 20 mm. Descer em
+cima do tronco significa descer em cima do chapéu, que está no caminho.
 
-    aproxima por cima -> desce -> fecha garra -> sobe -> leva -> solta
+Então a garra entra de lado e por baixo:
 
-Descer em linha reta por cima é o que evita derrubar o objeto: se o braço
-fosse direto para a pose final, o elo varreria lateralmente a mesa e
-empurraria o alvo antes de fechar a garra.
+    abre -> sobrevoa ao LADO -> desce ao lado -> entra subindo ->
+    fecha -> sobe -> leva -> solta
+
+O "ao lado" é um recuo RADIAL: o mesmo ângulo de base, raio menor. Isso
+importa porque deixa a base parada na etapa de entrada — só ombro e cotovelo
+se movem, e a garra avança na direção em que ela abre, passando por fora do
+chapéu em vez de por cima dele.
+
+A entrada ainda sobe alguns milímetros no último trecho. Com a visão errando
+até 2,2 mm, chegar subindo e chegar descendo têm consequências diferentes: o
+erro para baixo empurra a peça contra a mesa ou a tomba, e o erro para cima
+só fecha a garra um pouco acima do meio do tronco.
 """
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 from typing import Callable, Iterator
@@ -30,6 +42,27 @@ class ParametrosColeta:
     z_pega: float = 15.0         # altura da garra ao fechar (meia altura do objeto)
     z_aproximacao: float = 70.0  # altura do sobrevoo antes de descer
     z_transporte: float = 80.0   # altura ao carregar o objeto
+
+    # Quanto a garra para ANTES da peça, medido no raio, para descer ao lado
+    # dela em vez de em cima. Precisa ser maior que a metade do chapéu da
+    # peça (25 mm), senão a descida acontece sobre ele.
+    #
+    # Não é livre: recuar encurta o raio, e o braço tem um raio mínimo. Em
+    # 30 mm a sequência fecha em toda a área de coleta alcançável; acima
+    # disso os alvos mais próximos da base começam a cair fora do envelope.
+    # `planejar` reduz sozinho quando não couber, e diz na descrição da etapa
+    # qual recuo usou.
+    recuo_entrada: float = 30.0
+
+    # Piso do recuo. Metade do chapéu da peça são 25 mm: abaixo disso a
+    # descida ao lado acontece sobre o chapéu, e a sequência perde o sentido.
+    # Alvo que não aceita este recuo é recusado, não aproximado na marra.
+    recuo_minimo: float = 25.0
+
+    # Quanto a garra sobe no trecho final, ao entrar no tronco. A descida ao
+    # lado para em (z_pega - subida_entrada) e o último movimento é para
+    # cima. Ver o cabeçalho do módulo.
+    subida_entrada: float = 5.0
     # (x, y) do depósito, em mm. Precisa cair dentro dos limites da base:
     # um ponto "atrás" do braço (y negativo com x≈0) exige base ≈ -90°, que
     # nenhum servo de 0-180° alcança. Mantenha o depósito à frente ou ao lado.
@@ -81,6 +114,73 @@ class ControladorColeta:
         canais = pose_para_servos(self.braco, self.calib, x, y, z)
         return [f"SET {canal} {ang}" for canal, ang in sorted(canais.items())]
 
+    def _ponto_recuado(self, x: float, y: float, recuo: float):
+        """
+        O mesmo ângulo de base, com o raio encurtado em `recuo`.
+
+        Manter o ângulo é o ponto todo: a etapa de entrada fica sem mexer a
+        base, e a garra avança exatamente na direção em que os dedos abrem.
+        """
+        r = math.hypot(x, y)
+        if r <= 1e-6:
+            return x, y
+        fator = max(0.0, r - recuo) / r
+        return x * fator, y * fator
+
+    def _alcanca(self, x: float, y: float, z: float) -> bool:
+        try:
+            pose_para_servos(self.braco, self.calib, x, y, z)
+            return True
+        except PoseInalcancavel:
+            return False
+
+    def _recuo_viavel(self, x: float, y: float, z: float) -> float:
+        """
+        O maior recuo que o braço alcança, entre o configurado e o mínimo.
+
+        Recuar encurta o raio, e perto da base o envelope é estreito: o ponto
+        de descida pode cair fora dele mesmo com o ponto de pega dentro. Em
+        vez de recusar o alvo, usa o recuo que couber.
+
+        O piso é `recuo_minimo`, e ele não é negociável: abaixo da metade do
+        chapéu a descida acontece sobre o chapéu, que é exatamente o que esta
+        sequência existe para evitar. Alvo que não aceita o mínimo é recusado.
+        """
+        passo = 5.0
+        recuo = self.params.recuo_entrada
+        while recuo >= self.params.recuo_minimo:
+            if self._alcanca(*self._ponto_recuado(x, y, recuo), z):
+                return recuo
+            recuo -= passo
+        raise PoseInalcancavel(
+            f"alvo em ({x:.0f}, {y:.0f}) é alcançável, mas o ponto de entrada "
+            f"lateral não: com o recuo mínimo de {self.params.recuo_minimo:.0f} mm "
+            f"o braço teria de chegar a {math.hypot(x, y) - self.params.recuo_minimo:.0f} mm "
+            f"do eixo, a {z:.0f} mm de altura, e ali ele não dobra o suficiente. "
+            f"Recuar menos faria a garra descer sobre o chapéu da peça.",
+            motivo=PoseInalcancavel.ENVELOPE,
+        )
+
+    def _z_sobrevoo(self, rx: float, ry: float, z_entrada: float) -> float | None:
+        """
+        A maior altura alcançável sobre o ponto de descida, até z_aproximacao.
+
+        `None` quando não há nenhuma acima da própria descida — aí o sobrevoo
+        não existe e a sequência vai direto para o ponto de descida.
+
+        Perto da base o envelope é um corredor estreito: num raio de 100 mm o
+        braço só alcança de 20 a 40 mm de altura. Exigir sobrevoo fixo a
+        70 mm ali recusaria o alvo, e o sobrevoo não precisa ser alto — ele
+        só serve para a garra chegar ao ponto de descida de cima, em vez de
+        varrer a mesa de lado.
+        """
+        z = self.params.z_aproximacao
+        while z > z_entrada:
+            if self._alcanca(rx, ry, z):
+                return z
+            z -= 5.0
+        return None
+
     def _cmd_garra(self, fechada: bool) -> str:
         g = self.calib.garra
         p = self.params
@@ -114,16 +214,33 @@ class ControladorColeta:
         p = self.params
         dx, dy = p.deposito
 
-        return [
-            Etapa("Abrindo a garra", [self._cmd_garra(False)]),
-            Etapa("Sobrevoando o alvo", self._cmds_pose(x, y, p.z_aproximacao)),
-            Etapa("Descendo até o objeto", self._cmds_pose(x, y, p.z_pega)),
+        # Valida o ponto de pega ANTES de procurar o recuo: se o alvo não é
+        # alcançável, o erro tem que falar do alvo, e não do ponto de entrada.
+        cmds_pega = self._cmds_pose(x, y, p.z_pega)
+
+        z_entrada = p.z_pega - p.subida_entrada
+        recuo = self._recuo_viavel(x, y, z_entrada)
+        rx, ry = self._ponto_recuado(x, y, recuo)
+        z_alto = self._z_sobrevoo(rx, ry, z_entrada)
+
+        etapas = [Etapa("Abrindo a garra", [self._cmd_garra(False)])]
+
+        if z_alto is not None:
+            etapas.append(Etapa(
+                f"Sobrevoando {recuo:.0f} mm antes do alvo, a {z_alto:.0f} mm",
+                self._cmds_pose(rx, ry, z_alto)))
+
+        etapas += [
+            Etapa(f"Descendo ao lado da peça, a {z_entrada:.0f} mm",
+                  self._cmds_pose(rx, ry, z_entrada)),
+            Etapa("Entrando no tronco, por baixo do chapéu", cmds_pega),
             Etapa("Fechando a garra", [self._cmd_garra(True)]),
             Etapa("Subindo com o objeto", self._cmds_pose(x, y, p.z_transporte)),
             Etapa("Levando ao depósito", self._cmds_pose(dx, dy, p.z_transporte)),
             Etapa("Soltando o objeto", [self._cmd_garra(False)]),
             Etapa("Voltando para HOME", ["HOME"]),
         ]
+        return etapas
 
     def alcancavel(self, x: float, y: float) -> tuple[bool, str]:
         """Testa se dá para coletar em (x, y) sem mover nada."""
