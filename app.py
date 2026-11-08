@@ -20,6 +20,7 @@ import streamlit as st
 from picamera2 import Picamera2
 from ultralytics import YOLO
 
+from src.vision.fonte import aplicar_rotacao
 from src.vision.deteccao import (
     CLASSES_PERMITIDAS,
     CONFIANCA_MINIMA,
@@ -82,7 +83,7 @@ frame_count = 0
 ultima_detec = None
 
 while st.session_state.rodando:
-    frame = picam2.capture_array()
+    frame = aplicar_rotacao(picam2.capture_array())
     frame_count += 1
 
     if frame_count % INTERVALO_DETECCAO == 0:

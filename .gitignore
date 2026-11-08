@@ -9,3 +9,6 @@ config/homografia.json
 
 .idea/
 .DS_Store
+
+# Prévia da calibração: regerada a cada execução do calibrar_camera.py
+config/previa_calibracao.png

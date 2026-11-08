@@ -5,9 +5,9 @@
     "",
     "elos_mm  -> medir com regua/CAD, de centro de eixo a centro de eixo.",
     "           l1 = altura VERTICAL do TOPO DA PLACA ate o eixo do ombro.",
-"                A placa do braco tem a mesma espessura das placas da area de",
-"                coleta, entao esse topo e o mesmo plano onde o objeto se apoia",
-"                e onde a homografia e calibrada. Nao ha offset a corrigir.",
+    "                A placa do braco tem a mesma espessura das placas da area de",
+    "                coleta, entao esse topo e o mesmo plano onde o objeto se apoia",
+    "                e onde a homografia e calibrada. Nao ha offset a corrigir.",
     "           l2 = eixo do ombro    -> eixo do cotovelo (distancia direta)",
     "           l3 = eixo do cotovelo -> ponto de preensao da garra",
     "",
@@ -15,29 +15,92 @@
     "           da base, ponha aqui o deslocamento horizontal. No CAD do",
     "           projeto apareceu ~21 mm; confirmar no braco real.",
     "",
+    "ATENCAO: os limites abaixo pressupoem que o pulso de cada servo ja foi",
+    "         calibrado no firmware (comandos RAW e PULSO). Com o pulso errado,",
+    "         o angulo comandado nao corresponde ao real e um limite de 170",
+    "         pode estar empurrando o servo contra o batente.",
+    "",
     "juntas   -> achar com os comandos SWEEP/LIM/DETACH do braco_firmware:",
     "           minimo/maximo = limites FISICOS reais, achados em passos de 20 graus",
     "           offset  = angulo de servo que corresponde ao 0 grau matematico",
     "           sentido = +1 se servo cresce junto com o angulo matematico, -1 se ao contrario"
   ],
-
-  "calibrado": false,
-
+  "calibrado": true,
   "elos_mm": {
-    "l1": 105.0,
+    "l1": 49.5,
     "l2": 80.0,
     "l3": 80.0
   },
-
-  "offset_radial_mm": 0.0,
-
+  "offset_radial_mm": 57.8,
+  "acoplamento_cotovelo": "absoluto",
+  "_acoplamento_cotovelo": [
+    "'absoluto' = mecanismo de paralelogramo: os dois servomotores ficam",
+    "  na base, o cotovelo e passivo, e o servo 2 manda no angulo do",
+    "  antebraco em relacao ao CHAO. A garra se mantem nivelada sozinha.",
+    "'relativo' = cadeia serial: o servo fica no cotovelo e manda no",
+    "  angulo entre antebraco e braco superior.",
+    "Confirmado 'absoluto' nas fotos de perfil a 120 e 180 graus de ombro:",
+    "o antebraco manteve a inclinacao com o chao enquanto o ombro se moveu."
+  ],
   "juntas": {
-    "base":     { "canal": 0, "offset": 0,  "sentido": 1, "minimo": 10, "maximo": 170 },
-    "ombro":    { "canal": 1, "offset": 90, "sentido": 1, "minimo": 20, "maximo": 160 },
-    "cotovelo": { "canal": 2, "offset": 0,  "sentido": 1, "minimo": 10, "maximo": 170 },
-    "garra":    { "canal": 3, "offset": 0,  "sentido": 1, "minimo": 30, "maximo": 130 }
+    "base": {
+      "canal": 0,
+      "offset": 0,
+      "sentido": 1,
+      "minimo": 0,
+      "maximo": 180
+    },
+    "ombro": {
+      "canal": 1,
+      "offset": 200,
+      "sentido": -1,
+      "minimo": 90,
+      "maximo": 180
+    },
+    "cotovelo": {
+      "canal": 2,
+      "offset": 180,
+      "sentido": 1,
+      "minimo": 70,
+      "maximo": 160
+    },
+    "garra": {
+      "canal": 3,
+      "offset": 0,
+      "sentido": 1,
+      "minimo": 120,
+      "maximo": 137
+    }
   },
-
+  "acs712": {
+    "_leia_isto": [
+      "Sensor de corrente em serie com o V+ da garra, saida no A0 do Nano.",
+      "mv_por_amp: 185 = versao 5A (a certa), 100 = 20A, 66 = 30A.",
+      "limite_stall_amp: acima disso por mais de 300 ms o firmware recua a garra",
+      "  ate a corrente cair. 0 = DESLIGADO. Deixe 0 ate medir: mande AMP com a",
+      "  garra fechando sobre a peca e veja quanto marca; ponha o limite uns 30%",
+      "  acima do valor normal de pega e abaixo do valor de travamento.",
+      "canal_medido: qual junta o sensor ve. E a garra."
+    ],
+    "canal_medido": 3,
+    "mv_por_amp": 185,
+    "limite_stall_amp": 0.0
+  },
+  "camera": {
+    "_leia_isto": [
+      "rotacao_graus: quanto girar o quadro ASSIM QUE ele sai da camera, antes",
+      "  de qualquer outra coisa. Aceita 0, 90, 180 ou 270.",
+      "",
+      "  Esta em 180 porque a camera ficou montada de cabeca para baixo. Com",
+      "  isso tudo abaixo - homografia, deteccao, painel, previa - ve a imagem",
+      "  em pe, e nao sobra lugar nenhum onde alguem precise lembrar disso.",
+      "",
+      "  SE A CAMERA FOR REMONTADA EM PE, volte para 0. E, nos dois casos,",
+      "  RECALIBRE a homografia: girar o quadro muda o pixel de cada ponto, e",
+      "  uma homografia antiga passa a apontar para o lugar errado sem avisar."
+    ],
+    "rotacao_graus": 180
+  },
   "estabilidade": {
     "_leia_isto": "Quando a coordenada de um objeto pode ser usada. Ajuste com o objeto real parado na mesa: olhe a dispersao relatada e escolha uma tolerancia com folga sobre o tremor que aparecer, mas menor que a folga da garra.",
     "janela": 5,
@@ -45,15 +108,36 @@
     "timeout_s": 8.0,
     "validade_amostra_s": 1.0
   },
-
   "coleta": {
+    "_alturas": [
+      "08/11/2026. Conferidos contra o envelope real, depois que o offset e o",
+      "sentido do cotovelo foram medidos. Os valores voltaram a ser os",
+      "originais - 70 e 80 cabem com folga.",
+      "",
+      "Teto alcancavel por distancia da base, no eixo y:",
+      "  100 mm ->  40 mm     160 mm ->  97 mm",
+      "  120 mm -> 101 mm     180 mm ->  86 mm",
+      "  140 mm -> 101 mm     200 mm ->  65 mm",
+      "",
+      "Para a aproximacao vertical a garra precisa passar POR CIMA da peca",
+      "antes de descer na regiao de preensao. Com a peca de 50 mm e as placas",
+      "entre 120 e 180 mm da base, sobra folga de 30 a 50 mm.",
+      "",
+      "z_pega = 25: a peca e um altere de 50x50x50 mm com o tronco de 20 mm",
+      "de diametro no meio, entao o centro da regiao de preensao fica na",
+      "metade da altura. Confirmado com o autor em 08/11.",
+      "",
+      "Abaixo de y=100 o braco nao alcanca a mesa: fica dobrado demais."
+    ],
     "z_mesa": 0.0,
-    "z_pega": 15.0,
+    "z_pega": 25.0,
     "z_aproximacao": 70.0,
     "z_transporte": 80.0,
-    "deposito_xy": [-80.0, 100.0],
+    "deposito_xy": [
+      -80.0,
+      100.0
+    ],
     "pausa_s": 0.25,
-
     "_garra": [
       "Angulos de servo da garra, em GRAUS. null usa o minimo/maximo da junta.",
       "Preencha os dois: qual extremo fecha depende de como a garra foi montada,",
@@ -65,7 +149,115 @@
       "                 alem disso: com form closure a retencao e geometrica,",
       "                 e apertar mais so aquece o servo."
     ],
-    "garra_aberta_graus": null,
-    "garra_fechada_graus": null
-  }
+    "garra_aberta_graus": 120,
+    "garra_fechada_graus": 137
+  },
+  "_elos_medidos": [
+    "01/11/2026. Tirados do CAD oficial do MeArm V0.41 (STEP AP203 montado),",
+    "resolvendo as transformacoes de montagem e lendo os eixos dos furos de",
+    "pivo em coordenadas do conjunto. Nao sao mais estimativa de foto.",
+    "",
+    "Esqueleto medido no CAD (plano do braco, em mm):",
+    "  eixo de giro da base ......... Y=-595,55",
+    "  eixo do ombro ................ Y=-610,25  Z=53,90",
+    "  eixo do cotovelo (apice) ..... Y=-637,60  Z=129,03",
+    "  eixo do punho ................ Y=-706,86  Z=89,04",
+    "  ponto de preensao ............ Y=-750     Z=84,6",
+    "  topo da placa de base ........ Z=0",
+    "",
+    "  ombro -> cotovelo = 80,0 mm   (tres pecas independentes confirmam 80)",
+    "  cotovelo -> punho = 80,0 mm",
+    "  base -> ombro     = 14,7 mm na horizontal",
+    "  punho -> preensao = 43,1 mm pra frente, 4,4 mm pra baixo",
+    "",
+    "POR QUE l1 e offset_radial tem valores estranhos:",
+    "  A garra do MeArm NAO gira com o antebraco - o paralelogramo mantem ela",
+    "  nivelada. Entao o trecho punho->preensao e um vetor CONSTANTE no mundo,",
+    "  nao um terceiro elo. Constante soma direto nas constantes do modelo:",
+    "    offset_radial = 14,7 (base->ombro) + 43,1 (punho->preensao) = 57,8",
+    "    l1            = 53,90 (altura do ombro) - 4,4 (queda da garra) = 49,5",
+    "  Com isso o modelo de 2 elos que ja existe fica EXATO, sem mudar codigo.",
+    "  Conferido: no pose do CAD (ombro 70 graus, antebraco -30 graus) o modelo",
+    "  reproduz o ponto de preensao com erro < 0,1 mm.",
+    "",
+    "  Se alguem um dia trocar a garra por uma que gire junto com o antebraco,",
+    "  esta dobra deixa de valer e l3 vira 123 mm com offset_radial 14,7.",
+    "",
+    "AINDA NAO MODELADO: o plano do braco passa 4,0 mm ao lado do eixo de giro",
+    "  da base (braco em X=244,7, eixo da base em X=248,7). Isso joga a garra",
+    "  uns 4 mm pro lado, sistematico. Da ordem da tolerancia da peca, entao",
+    "  decidir depois se vale corrigir.",
+    "",
+    "Confere com o que foi medido na bancada:",
+    "  l1 regua 50      -> CAD 53,9",
+    "  'l3' regua 130   -> CAD 130,2 do cotovelo ate a PONTA do dedo",
+    "  'l2' regua 3-4cm -> CAD 28,2, que e o furo de fixacao do SG90, nao um elo"
+  ],
+  "_limite_acoplado": [
+    "07/11/2026. MEDIDO, VALIDADO E IMPLEMENTADO.",
+    "",
+    "O limite do cotovelo depende de onde o ombro esta: com o braco recolhido",
+    "o antebraco encosta no proprio braco antes de chegar no lim_min de 70.",
+    "",
+    "  s1=100 -> encostou em s2=135      (ajuste)",
+    "  s1=130 -> encostou em s2= 90      (ajuste)",
+    "  s1=115 -> encostou em s2=115      (VALIDACAO, fora do ajuste)",
+    "  s1=160 -> s2=70 livre, dava pra descer mais",
+    "  s1= 90 -> encostou em s2=136, mas ali quem bate e a GARRA",
+    "",
+    "    s2 >= 285 - 1,5 * s1 + 15",
+    "",
+    "A reta sai dos dois primeiros pontos. O terceiro nao entrou no ajuste e",
+    "caiu a 2,5 graus da previsao - e o que autoriza confiar nela. A margem",
+    "de 15 cobre o quinto ponto, onde a colisao e outra (garra, nao antebraco)",
+    "e a reta e otimista em 14 graus.",
+    "",
+    "Aplicada nos DOIS sentidos: mandar o ombro recolher com o cotovelo baixo",
+    "chega na mesma colisao pelo outro caminho.",
+    "  firmware  -> ACOP_A/ACOP_B/ACOP_MARGEM, satura",
+    "  Python    -> CalibracaoBraco.viola_acoplamento, RECUSA (o planejador",
+    "               tem o outro ramo da IK para tentar)",
+    "  teste     -> test_kinematics_acoplamento.py cobra as 5 medicoes",
+    "",
+    "A linha do s1=180 / s2=120 e outro fenomeno: bateu no PISO, nao em si",
+    "mesmo. Quem resolve aquilo e o z_mesa da cinematica, que ja existe."
+  ],
+  "_offsets_sentidos": [
+    "08/11/2026. CALIBRACAO FECHADA. Os nove numeros estao medidos.",
+    "",
+    "BASE     offset   0   sentido +1",
+    "  Em s0=90 o braco aponta reto para a area de coleta. Com X pra direita",
+    "  e Y pra frente isso e 90 graus matematicos, logo offset = 90-90 = 0.",
+    "",
+    "OMBRO    offset 200   sentido -1",
+    "  Em s1=110 o elo ombro->cotovelo ficou VERTICAL: 80,0 mm pra cima e 0",
+    "  pra frente. O modulo bateu com o CAD no primeiro decimal, e angulo",
+    "  reto e das poucas coisas que o olho nao erra. theta1(110)=90, entao",
+    "  offset = 110+90 = 200.",
+    "  Consequencia: o elo do ombro NUNCA fica horizontal. theta1 vai de 110",
+    "  graus (s1=90) a 20 graus (s1=180).",
+    "",
+    "COTOVELO offset 180  sentido +1",
+    "  Em s2=90 o antebraco fica na VERTICAL apontando pra baixo (foto), o",
+    "  que da theta2 = -90. Mas a vertical sozinha NAO fecha: (+1, 180) e",
+    "  (-1, 0) poem o antebraco em pe no mesmo s2=90 e discordam em tudo o",
+    "  resto. Foi preciso uma segunda pose para separar.",
+    "  DECIDIU em s1=140 / s2=160, onde as duas hipoteses poem a garra na",
+    "  mesma ALTURA e a 150 mm de distancia uma da outra:",
+    "    previsto (+1, 180): 173 mm da base, 91 mm de altura",
+    "    previsto (-1,   0):  23 mm da base, 91 mm de altura",
+    "    medido ............ 170 mm da base, 90 mm de altura",
+    "  Confirma tambem o comentario dos limites no firmware, que ja dizia",
+    "  que abaixo de s2=70 o antebraco gira PARA DENTRO - comportamento que",
+    "  so o sentido +1 produz.",
+    "",
+
+    "DESCARTADO: offset 46 do cotovelo, deduzido da pose em que a garra",
+    "  encosta na placa supondo altura zero. A suposicao estava errada e a",
+    "  conferencia direta derrubou: com 46, s2=90 daria 44 graus abaixo da",
+    "  horizontal, e a foto mostra o antebraco em pe.",
+    "",
+    "DESCARTADO: a parte 3 do MEDICAO_OFFSET.md. As leituras de regua nao",
+    "  passaram na autoconferencia dos 80 mm (deram de 86 a 130)."
+  ]
 }

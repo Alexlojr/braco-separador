@@ -54,39 +54,66 @@ class Braco:
     def alcance_min(self) -> float:
         return abs(self.l2 - self.l3)
 
+    def resolver_ik_ramos(self, x: float, y: float, z: float):
+        """
+        Todas as soluções de cinemática inversa para o alvo, em GRAUS.
+
+        Uma cadeia planar de dois elos alcança cada ponto por DUAS poses,
+        espelhadas em torno da reta ombro->alvo: cotovelo pra cima e cotovelo
+        pra baixo. A lei dos cossenos devolve o módulo do ângulo; o sinal é
+        quem escolhe o ramo.
+
+        Antes aqui só existia o ramo positivo, e isso bloqueava o braço
+        inteiro. Com offset de ombro 200 o elo do ombro nunca desce abaixo de
+        20° da horizontal, então quem leva a garra até a mesa é o antebraço
+        apontando pra baixo — exatamente o ramo negativo. Só o ramo positivo
+        pedia ombro em -74°, ou seja servo 274, e todo alvo na altura da mesa
+        era recusado por limite de junta.
+
+        Devolve [] se o alvo estiver fora do envelope. A ordem é
+        [positivo, negativo]; quem chama escolhe pelos limites das juntas.
+        """
+        theta_base = math.degrees(math.atan2(y, x))
+
+        r = math.hypot(x, y) - self.offset_radial
+        h = z - self.l1
+        dist2 = r * r + h * h
+        dist = math.sqrt(dist2)
+
+        if dist > self.alcance_max or dist < self.alcance_min:
+            return []
+
+        cos_cot = (dist2 - self.l2 ** 2 - self.l3 ** 2) / (2 * self.l2 * self.l3)
+        cos_cot = max(-1.0, min(1.0, cos_cot))
+        magnitude = math.acos(cos_cot)
+
+        solucoes = []
+        for theta_cotovelo in (magnitude, -magnitude):
+            theta_ombro = math.atan2(h, r) - math.atan2(
+                self.l3 * math.sin(theta_cotovelo),
+                self.l2 + self.l3 * math.cos(theta_cotovelo),
+            )
+            solucoes.append({
+                "base": theta_base,
+                "ombro": math.degrees(theta_ombro),
+                "cotovelo": math.degrees(theta_cotovelo),
+            })
+            if magnitude == 0.0:     # braço reto: os dois ramos coincidem
+                break
+        return solucoes
+
     def resolver_ik(self, x: float, y: float, z: float):
         """
         Entrada: alvo (x, y, z) em mm, relativo à base do braço.
         Saída: dict com ângulos em GRAUS (convenção matemática), ou
                None se o alvo estiver fora do envelope alcançável.
+
+        Devolve só o primeiro ramo, de cotovelo positivo. Quem precisa
+        respeitar os limites das juntas deve usar `resolver_ik_ramos()`,
+        porque neste braço é o segundo ramo que serve na altura da mesa.
         """
-        theta_base = math.degrees(math.atan2(y, x))
-
-        # Distância horizontal, descontando o deslocamento do ombro: o
-        # ombro já "adianta" essa distância na direção do alvo.
-        r = math.hypot(x, y) - self.offset_radial
-        h = z - self.l1           # altura relativa ao ombro
-        dist2 = r * r + h * h
-        dist = math.sqrt(dist2)
-
-        if dist > self.alcance_max or dist < self.alcance_min:
-            return None
-
-        # Lei dos cossenos -> ângulo relativo do cotovelo (solução "elbow-up")
-        cos_cot = (dist2 - self.l2 ** 2 - self.l3 ** 2) / (2 * self.l2 * self.l3)
-        cos_cot = max(-1.0, min(1.0, cos_cot))   # margem contra erro de float
-        theta_cotovelo = math.acos(cos_cot)
-
-        theta_ombro = math.atan2(h, r) - math.atan2(
-            self.l3 * math.sin(theta_cotovelo),
-            self.l2 + self.l3 * math.cos(theta_cotovelo),
-        )
-
-        return {
-            "base": theta_base,
-            "ombro": math.degrees(theta_ombro),
-            "cotovelo": math.degrees(theta_cotovelo),
-        }
+        ramos = self.resolver_ik_ramos(x, y, z)
+        return ramos[0] if ramos else None
 
     def cinematica_direta(self, base: float, ombro: float, cotovelo: float):
         """Inverso da IK. Serve para validar que os ângulos reproduzem o alvo."""
@@ -170,9 +197,76 @@ class CalibracaoBraco:
         default_factory=lambda: CalibracaoServo(3, "garra", offset=0, sentido=1, minimo=30, maximo=130)
     )
 
+    # Como o servomotor do cotovelo se relaciona com o antebraco.
+    #
+    #   "relativo"  cadeia serial comum: o servo fica NO cotovelo e manda no
+    #               angulo entre antebraco e braco superior. E o que a
+    #               convencao matematica daqui ja chama de theta_cotovelo.
+    #
+    #   "absoluto"  mecanismo de paralelogramo (MeArm e parentes): os dois
+    #               servomotores ficam na BASE e o cotovelo e uma junta
+    #               passiva. O servo manda no angulo do antebraco em relacao
+    #               ao CHAO, nao ao braco superior, e a garra se mantem
+    #               nivelada sozinha em qualquer pose.
+    #
+    # Na convencao daqui o angulo absoluto do antebraco e theta_ombro +
+    # theta_cotovelo, entao a diferenca entre os dois casos e uma soma.
+    #
+    # Errar isto nao quebra nada de forma visivel: o cotovelo so erra por um
+    # valor que muda conforme a altura do ombro, e o erro parece aleatorio.
+    # O teste esta em tests/test_kinematics_acoplamento.py.
+    acoplamento_cotovelo: str = "relativo"
+
+    def angulos_de_servo(self, angulos: dict[str, float]) -> dict[str, float]:
+        """
+        Converte os angulos da cinematica no que cada SERVO precisa receber,
+        ainda em graus matematicos (offset e sentido vem depois).
+
+        So o cotovelo muda, e so no caso paralelogramo.
+        """
+        if self.acoplamento_cotovelo == "absoluto":
+            saida = dict(angulos)
+            saida["cotovelo"] = angulos["ombro"] + angulos["cotovelo"]
+            return saida
+        if self.acoplamento_cotovelo != "relativo":
+            raise ValueError(
+                f"acoplamento_cotovelo invalido: {self.acoplamento_cotovelo!r}. "
+                "Use 'relativo' ou 'absoluto'."
+            )
+        return angulos
+
     def juntas_ik(self):
         """Só as três juntas que participam da cinemática (garra fica de fora)."""
         return {"base": self.base, "ombro": self.ombro, "cotovelo": self.cotovelo}
+
+    # Limite acoplado cotovelo x ombro. Precisa bater com ACOP_A / ACOP_B /
+    # ACOP_MARGEM do braco_firmware.ino, onde está a medição que os originou.
+    ACOP_A = 285.0
+    ACOP_B = 1.5
+    ACOP_MARGEM = 15.0
+
+    def cotovelo_minimo_para(self, servo_ombro: float) -> float:
+        """Menor ângulo de servo do cotovelo que não encosta, dado o ombro."""
+        m = self.ACOP_A - self.ACOP_B * servo_ombro + self.ACOP_MARGEM
+        return max(m, self.cotovelo.minimo)
+
+    def viola_acoplamento(self, servo_ombro: float, servo_cotovelo: float):
+        """
+        None se a dupla é segura; a mensagem do problema se não é.
+
+        O firmware também aplica esta regra, e lá ela satura. Aqui ela RECUSA,
+        de propósito: o planejador tem para onde ir — a cinemática inversa
+        resolve o mesmo alvo por dois ramos, e recusar um deixa o outro ser
+        tentado. Saturar escolheria em silêncio uma pose que ninguém pediu.
+        """
+        minimo = self.cotovelo_minimo_para(servo_ombro)
+        if servo_cotovelo < minimo:
+            return (
+                f"ombro em {servo_ombro:.1f}° exige cotovelo >= {minimo:.1f}°, "
+                f"veio {servo_cotovelo:.1f}° (limite acoplado: o antebraço "
+                f"encosta no braço antes do limite de caixa)"
+            )
+        return None
 
 
 class PoseInalcancavel(Exception):
@@ -217,28 +311,57 @@ def pose_para_servos(
     que vira um clamp silencioso faz o braço ir para uma pose errada sem
     ninguém perceber. Melhor falhar alto e tratar em cima.
     """
-    angulos = braco.resolver_ik(x, y, z)
-    if angulos is None:
+    ramos = braco.resolver_ik_ramos(x, y, z)
+    if not ramos:
         raise PoseInalcancavel(
             f"Alvo ({x:.0f}, {y:.0f}, {z:.0f}) fora do envelope "
             f"[{braco.alcance_min:.0f}..{braco.alcance_max:.0f}] mm",
             motivo=PoseInalcancavel.ENVELOPE,
         )
 
-    comandos: dict[int, float] = {}
-    for nome, servo in calib.juntas_ik().items():
-        bruto = servo.para_servo(angulos[nome])
-        if not servo.dentro_dos_limites(bruto):
-            if not permitir_clamp:
-                raise PoseInalcancavel(
-                    f"Junta '{nome}' exigiria {bruto:.1f}°, "
-                    f"fora do limite [{servo.minimo:.0f}, {servo.maximo:.0f}]",
-                    motivo=PoseInalcancavel.LIMITE_JUNTA,
-                )
-            bruto = servo.clamp(bruto)
-        comandos[servo.canal] = round(bruto, 1)
+    # Dos dois ramos, vale o primeiro que couber nos limites. Testar os dois
+    # nao e refinamento: com a calibracao deste braco o ramo de cotovelo
+    # positivo pede ombro em -74 graus para qualquer alvo na altura da mesa,
+    # e sozinho ele recusaria a area de coleta inteira.
+    ultimo_erro = None
+    for angulos in ramos:
+        # O que a cinematica calcula nao e necessariamente o que o servo
+        # recebe: num braco de paralelogramo o servo do cotovelo manda no
+        # angulo absoluto do antebraco. Ver CalibracaoBraco.acoplamento_cotovelo.
+        angulos_servo = calib.angulos_de_servo(angulos)
 
-    return comandos
+        comandos: dict[int, float] = {}
+        estourou = None
+        for nome, servo in calib.juntas_ik().items():
+            bruto = servo.para_servo(angulos_servo[nome])
+            if not servo.dentro_dos_limites(bruto):
+                estourou = (
+                    f"Junta '{nome}' exigiria {bruto:.1f}°, "
+                    f"fora do limite [{servo.minimo:.0f}, {servo.maximo:.0f}]"
+                )
+                break
+            comandos[servo.canal] = round(bruto, 1)
+
+        if estourou is None:
+            acoplado = calib.viola_acoplamento(
+                comandos[calib.ombro.canal], comandos[calib.cotovelo.canal]
+            )
+            if acoplado is None:
+                return comandos
+            estourou = acoplado
+        ultimo_erro = estourou
+
+    if permitir_clamp:
+        angulos_servo = calib.angulos_de_servo(ramos[0])
+        return {
+            servo.canal: round(servo.clamp(servo.para_servo(angulos_servo[nome])), 1)
+            for nome, servo in calib.juntas_ik().items()
+        }
+
+    raise PoseInalcancavel(
+        f"Nenhum dos {len(ramos)} ramos cabe nos limites. {ultimo_erro}",
+        motivo=PoseInalcancavel.LIMITE_JUNTA,
+    )
 
 
 def classificar_alvo(braco: Braco, calib: CalibracaoBraco, x: float, y: float, z: float) -> str:
@@ -306,6 +429,7 @@ def carregar_config(caminho="config/braco.json"):
         ombro=_servo("ombro"),
         cotovelo=_servo("cotovelo"),
         garra=_servo("garra"),
+        acoplamento_cotovelo=str(dados.get("acoplamento_cotovelo", "relativo")),
     )
 
     coleta = dados.get("coleta", {})

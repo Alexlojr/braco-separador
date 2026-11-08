@@ -14,7 +14,10 @@ app.py                        dashboard Streamlit: câmera ao vivo + YOLO
 coletar.py                    pipeline de coleta ponta a ponta (headless)
 calibrar_camera.py            gera config/homografia.json a partir de 4 pontos
 mapa_alcance.py               desenha em ASCII o que o braço alcança
+pegada_manual.py              pega e solta em ângulo de servo, sem calibração
 setup.sh                      setup do Raspberry Pi
+MEDICAO_OFFSET.md             roteiro de medição de offset/sentido na bancada
+PROXIMO_PASSO_CAMERA.md       passo a passo da calibração da câmera, no Pi
 
 config/
   braco.json                  medidas e calibração — o arquivo do dia a dia
@@ -22,6 +25,10 @@ config/
 
 firmware/
   braco_firmware/             sketch único: operação + testes de bancada
+  diagnostico/                sketch mínimo: pulso cru, para quando nada se move
+
+models/
+  yolov8n.pt                  pesos base; ainda não treinado nos objetos
 
 src/
   arm/
@@ -29,21 +36,25 @@ src/
     coleta.py                 sequência de pega
     mock_arm_serial.py        simula os servos; encaminha para o Arduino se houver
   vision/
+    area_coleta.py            acha os cantos da área de coleta por bordas
+    fonte.py                  orientação da câmera, aplicada na captura
     deteccao.py               escolhe e desenha a detecção do YOLO
     homografia.py             pixel -> mm
     estabilidade.py           decide quando a coordenada pode ser usada
   camera.py                   visualizador standalone, sem Streamlit
 
 tests/
-  test_firmware.py            dispatch e perfil de velocidade, sem Arduino
+  test_area_coleta.py         detecção dos cantos, em cena sintética
+  test_firmware.py            dispatch, perfil de velocidade, tabela DEMO
   test_estabilidade.py        portão de estabilidade
+  test_kinematics_acoplamento.py  paralelogramo: ângulo absoluto vs relativo
   test_pipeline.py            corrente visão -> braço, sem câmera
 ```
 
 Rodar os testes (nenhum precisa de hardware):
 
 ```bash
-python tests/test_firmware.py && python tests/test_estabilidade.py && python tests/test_pipeline.py
+for t in tests/test_*.py; do python "$t" || break; done
 ```
 
 ## As camadas, e por que estão separadas
@@ -90,6 +101,7 @@ STOP                   ->  OK STOP
 Bancada — existem para a calibração do passo 2:
 
 ```
+DEMO [<graus_s>]         roda a sequência de pega e solta sozinho, sem PC
 SWEEP <id> <de> <ate>    vai e volta na janela até um STOP
 LIM                      mostra os limites de todas as juntas
 LIM <id> <min> <max>     redefine o limite de uma junta
@@ -99,6 +111,23 @@ ATTACH <id>|ALL          religa o PWM na posição atual
 RAW <id> <pulso>         escreve a contagem de pulso crua
 PULSO <id> <min> <max>   guarda a calibração de pulso achada com RAW
 HELP                     lista os comandos
+```
+
+Sensor de corrente (ACS712 em série com o V+ da garra, lido em A0):
+
+```
+AMP                      AMP <corrente_A> <adc_medio> <adc_zero>
+ZERO                     mede o zero do sensor agora (garra parada)
+SENS <mV_por_A>          185 = versão 5 A, 100 = 20 A, 66 = 30 A
+LIMAMP [<amperes>]       limite de travamento; 0 desliga; sem argumento mostra
+```
+
+Mensagens não solicitadas que o firmware pode emitir:
+
+```
+STALL <canal> <corrente>     a garra travou; o firmware está recuando
+OK ALIVIO <canal> <angulo>   recuou até a corrente cair; parou aqui
+ERR STALL_PERSISTE ...       recuou 15° e a corrente não caiu; desistiu
 ```
 
 Canais: `0` base, `1` ombro, `2` cotovelo, `3` garra.
@@ -122,6 +151,34 @@ aparecia. Agora, havendo Arduino, a resposta dele é a que vale.
 `pausa_s` no `braco.json` deixou de ser a espera do movimento e passou a ser
 só o tempo de assentamento depois da chegada — a estrutura de acrílico ainda
 oscila um pouco quando o servo para.
+
+## Alívio de travamento da garra
+
+O ACS712 mede só a corrente do servomotor da garra. Quando ela passa de
+`limite_stall_amp` por mais de 300 ms, o firmware assume que a garra fechou
+sobre algo que não cede e **recua o ângulo comandado um grau por vez**, no
+sentido de onde veio, até a corrente cair abaixo de 80% do limite. Onde ela
+cai é o ponto de contato sem excesso de força, que para uma peça retida por
+encaixe é exatamente a pega desejada.
+
+Por que recuar, e não só parar: o firmware não tem realimentação de posição.
+Se a garra está fisicamente travada em 105° com o comando em 110°, parar o
+comando em 110° não resolve nada, o servomotor continua forçando. Só recuar o
+comando até a corrente cair encontra o ponto real.
+
+Salvaguardas: janela de graça de 300 ms para não confundir pico de partida com
+travamento; recuo máximo de 15°, depois do qual desiste e avisa
+(`ERR STALL_PERSISTE`), porque corrente que não cai com recuo não é
+travamento mecânico; e uma trava que impede reentrar em alívio depois de
+desistir, enquanto a corrente não normalizar. Sem essa trava, a garra recuaria
+15° de cada vez até o limite da junta, soltando a peça.
+
+**Vem desligado** (`limite_stall_amp: 0`). Para calibrar: mande `AMP` com a
+garra fechando sobre a peça e veja o valor normal de pega; ponha o limite uns
+30% acima disso e abaixo do valor que aparece com a garra forçando.
+
+O zero do sensor é medido no boot, 600 ms depois de os servomotores assentarem,
+e pode ser refeito com `ZERO`. Não é 511,5: cada peça tem offset próprio.
 
 ## Movimento suavizado
 
@@ -154,17 +211,19 @@ de emergência, e desacelerar suave numa emergência não é o que se quer.
 Cada etapa depende da anterior estar certa. Pular uma faz a seguinte falhar de
 um jeito difícil de diagnosticar.
 
-**1. Medir os elos** → `config/braco.json`, campo `elos_mm`
+**1. Medir os elos** → `config/braco.json`, campo `elos_mm` — **já resolvido**
 
-De centro de eixo a centro de eixo:
+Os comprimentos saíram do CAD oficial do MeArm V0.41 em 01/11, lendo os eixos
+dos furos de pivô com as transformações de montagem resolvidas. Não precisa
+medir de novo. `l2 = l3 = 80,0`.
 
-- `l1` — altura **vertical** da superfície até o eixo do ombro
-- `l2` — eixo do ombro → eixo do cotovelo (distância direta)
-- `l3` — eixo do cotovelo → ponto onde a garra fecha
+`l1 = 49,5` e `offset_radial = 57,8` não são medidas diretas de peça nenhuma,
+são dobras: como o paralelogramo mantém a garra nivelada, o trecho punho →
+ponto de preensão é um vetor constante no mundo e soma direto nas constantes
+do modelo. O detalhe está em `_elos_medidos`, dentro do próprio `braco.json`,
+e em `MEDICAO_OFFSET.md`.
 
-Se o eixo do ombro não fica exatamente acima do eixo da base, meça esse
-deslocamento horizontal e ponha em `offset_radial_mm`. No CAD apareceu algo em
-torno de 21 mm — confirmar no braço real.
+Alcance resultante: 218 mm no máximo, 210 mm na altura da superfície.
 
 **2. Achar os limites das juntas** → `config/braco.json`, campo `juntas`
 
@@ -197,9 +256,45 @@ Rode antes de fixar a área de coleta em definitivo. Os símbolos importam:
 
 **4. Fixar a câmera e calibrar** → `python calibrar_camera.py`
 
-4 pontos medidos em mm relativos à base do braço. Erro residual acima de ~5 mm
-quer dizer ponto mal medido ou mal clicado. Vale enquanto câmera, mesa e base
-não se moverem — se qualquer um sair do lugar, refaça.
+A câmera está montada de cabeça para baixo, e isso é corrigido em
+`camera.rotacao_graus` no `braco.json`, hoje em `180`. O giro é aplicado no
+instante da captura, nos quatro lugares que abrem câmera, então tudo abaixo
+— homografia, detecção, painel, prévia — vê a imagem em pé.
+
+Se a câmera for remontada em pé, volte o campo para `0`. Nos dois casos,
+**recalibre**: girar o quadro muda o pixel de cada ponto, e uma homografia
+antiga passa a apontar errado sem avisar.
+
+A área de coleta é um retângulo, então os cantos dela não precisam ser
+clicados: a câmera acha sozinha, por detecção de bordas. O que você informa
+são as dimensões da placa e onde ela está:
+
+```bash
+python calibrar_camera.py --largura 300 --altura 200 --x0 -150 --y0 60 --conferir
+```
+
+`x0`/`y0` são o canto mais próximo da base e mais à esquerda, em mm, com
+origem no eixo da base (+X direita, +Y frente). Quatro números que só mudam
+se a maquete for remontada.
+
+**O script salva uma prévia em `config/previa_calibracao.png`. Abra.** A
+correspondência entre canto da imagem e canto da mesa pode sair girada se a
+câmera estiver montada de lado, e isso **não aparece em número nenhum** — com
+4 pontos a matriz fica exata de qualquer jeito, e o erro só se manifesta no
+braço indo para o lugar errado. Se estiver girada, repita com `--rotacao 1`
+(ou 2, ou 3).
+
+Pelo mesmo motivo, o residual que o script relata sobre os 4 cantos é ~0 por
+construção: 8 equações para as 8 incógnitas da matriz. Ele não valida nada.
+Quem valida é o `--conferir`, que pede pontos medidos com régua que não
+entraram no cálculo. É esse número que vale como erro de calibração, e é ele
+que deve ser citado no relatório.
+
+Se a detecção não pegar a placa — contraste ruim, placa cortada no quadro —
+tem `--clique` e `--manual` com o fluxo antigo.
+
+A calibração vale enquanto câmera, mesa e base não se moverem. Se qualquer um
+sair do lugar, refaça.
 
 **5. Dry-run** → `python coletar.py --dry-run`
 
@@ -275,8 +370,17 @@ da ponta. A garra só abre e fecha, então a IK resolve 3 incógnitas, não 4.
 fino é do próprio servo. PID externo só faria sentido com motor DC cru.
 
 **IK analítica por lei dos cossenos, não iterativa.** Com 3 juntas a solução
-fechada é exata e mais barata que FABRIK ou Jacobiana. Escolhida a solução
-"elbow-up".
+fechada é exata e mais barata que FABRIK ou Jacobiana.
+
+**Os dois ramos da IK são resolvidos, e quem escolhe são os limites.** Uma
+cadeia planar de dois elos alcança cada ponto por duas poses espelhadas; a lei
+dos cossenos dá o módulo do ângulo e o sinal escolhe o ramo. Até 03/11 só
+existia o ramo positivo, e isso recusava a área de coleta inteira: com a
+referência do ombro em 200° o elo nunca desce abaixo de 20° da horizontal, e o
+ramo positivo pedia ombro em −74° para qualquer alvo na altura da mesa. Quem
+leva a garra até a superfície é o antebraço apontando para baixo, que é o ramo
+negativo. `resolver_ik_ramos()` devolve os dois e `pose_para_servos()` fica com
+o primeiro que couber nos limites.
 
 **Os ângulos da garra são configuração, não dedução.** `garra_aberta_graus` e
 `garra_fechada_graus` no `braco.json`. Deixá-los em `null` faz a coleta cair no
@@ -302,15 +406,32 @@ em vez de uma Jetson.
 
 ## O que ainda não está resolvido
 
-- **Os limites do firmware são um padrão de segurança, não a fonte.** O
-  `coletar.py` empurra os valores do `braco.json` via `LIM` ao conectar, então
-  o JSON manda. Mas se alguém mover o braço por fora do `coletar.py` (pelo
-  terminal do `mock_arm_serial`, por exemplo), valem os valores compilados no
-  sketch — vale mantê-los razoáveis.
-- **O firmware não foi compilado nem carregado ainda.** A lógica de dispatch e
-  a rampa foram testadas por simulação, não na Arduino IDE.
+Atualizado em 05/11/2026.
+
+- **Os limites de junta divergem entre três arquivos.** `braco.json`, o `.ino`
+  e o `pegada_manual.py` discordam no máximo do cotovelo (180 / 170 / 180) e no
+  da garra (130 / 140 / 130). Durante a coleta vale o JSON, que o `coletar.py`
+  empurra por `LIM` ao conectar; na bancada vale o que está compilado, que é
+  justamente quando um limite errado quebra alguma coisa. Qual é o certo é
+  medição, não dedução — `tests/test_firmware.py` avisa a cada rodada até que
+  os três sejam igualados.
+- **A referência angular do cotovelo é dedução, não medida.** 46°, obtida da
+  pose em que a garra encosta na superfície. Confere com as outras três poses
+  do mesmo ensaio, mas falta a verificação direta: `SET 2 136` deve deixar o
+  antebraço na vertical. Enquanto não for conferida, `"calibrado"` fica
+  `false`.
+- **O alívio de travamento nunca rodou com a garra real.** A leitura do ACS712
+  e a lógica de alívio foram testadas só por simulação. `limite_stall_amp`
+  está em 0: a corrente de pega medida até agora chega a 0,5 A, mas sem a
+  corrente de travamento o limite seria arbitrário.
+- **A garra não fecha com o braço estendido.** Zumbe e não completa o curso,
+  com fonte de 5 V / 10 A. Suspeita no caminho de distribuição, ou no próprio
+  fechamento mecânico estar abaixo dos 90° comandados. Em investigação.
 - **O modelo ainda usa classes COCO**, não os objetos do projeto.
 - **O `coletar.py` nunca rodou com câmera de verdade.** A corrente abaixo da
   câmera é testada em `tests/test_pipeline.py`, mas os dois elos de cima
-  (Picamera2 e YOLO) só existem no Pi.
-- **Nada rodou com o braço físico ainda** — tudo foi testado com serial falsa.
+  (Picamera2 e YOLO) só existem no Pi. A homografia física também não foi
+  calibrada: o suporte da câmera não está instalado.
+- **O braço já rodou energizado**, com o firmware carregado, o protocolo
+  conferido e a sequência `DEMO` executada ponta a ponta. O que não rodou é a
+  corrente completa câmera → braço.

@@ -20,6 +20,7 @@ from ultralytics import YOLO
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.vision.fonte import aplicar_rotacao  # noqa: E402
 from src.vision.deteccao import (  # noqa: E402
     CLASSES_PERMITIDAS,
     INTERVALO_DETECCAO,
@@ -46,7 +47,7 @@ def main() -> int:
 
     try:
         while True:
-            frame = picam2.capture_array()
+            frame = aplicar_rotacao(picam2.capture_array())
             contador += 1
 
             if contador % INTERVALO_DETECCAO == 0:

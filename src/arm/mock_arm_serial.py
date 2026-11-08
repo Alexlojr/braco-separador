@@ -46,10 +46,30 @@ SERVOS = {
 
 
 def detectar_porta_arduino():
-    """Procura uma porta serial USB plugada na Raspberry Pi (Arduino Nano)."""
-    for info in list_ports.comports():
+    """
+    Procura a porta serial do Arduino Nano.
+
+    Linux/Raspberry Pi: /dev/ttyUSB* ou /dev/ttyACM*, que e o caso de
+    producao. Windows tambem entra aqui porque a bancada de teste e um PC:
+    la as portas se chamam COM3, COM7..., sem nada no NOME que diga que e
+    um Arduino, entao a identificacao tem que sair da descricao do driver.
+    A maioria dos Nano clones usa o conversor CH340.
+    """
+    portas = list(list_ports.comports())
+
+    for info in portas:
         if "ttyUSB" in info.device or "ttyACM" in info.device:
             return info.device
+
+    marcas = ("arduino", "ch340", "ch341", "ftdi", "ft232", "cp210",
+              "usb-serial", "usb serial", "wch")
+    for info in portas:
+        texto = " ".join(
+            str(x) for x in (info.description, info.manufacturer, info.product) if x
+        ).lower()
+        if any(m in texto for m in marcas):
+            return info.device
+
     return None
 
 ANGULO_MIN = 0
@@ -211,6 +231,33 @@ class MockArmSerial:
             time.sleep(intervalo_s)
 
         return False
+
+    def corrente(self):
+        """
+        Corrente medida pelo ACS712 na garra, em ampères. None sem Arduino ou
+        sem resposta. Sinal negativo quer dizer IP+ e IP- invertidos no borne.
+        """
+        resposta = self._pergunta("AMP", "AMP")
+        if resposta is None:
+            return None
+        try:
+            return float(resposta.split()[1])
+        except (IndexError, ValueError):
+            return None
+
+    def configurar_sensor(self, acs: dict) -> bool:
+        """
+        Empurra a configuração do ACS712 (sensibilidade e limite de travamento)
+        para o firmware. Mesmo motivo do enviar_limites: o JSON é a fonte, e os
+        valores compilados no sketch são só padrão de segurança.
+
+        Devolve True se o firmware aceitou os dois comandos.
+        """
+        if self._serial_real is None or not acs:
+            return False
+        ok_sens = self._pergunta(f"SENS {float(acs.get('mv_por_amp', 185)):.1f}", "OK SENS")
+        ok_lim = self._pergunta(f"LIMAMP {float(acs.get('limite_stall_amp', 0.0)):.2f}", "OK LIMAMP")
+        return ok_sens is not None and ok_lim is not None
 
     def enviar_limites(self, calib) -> int:
         """

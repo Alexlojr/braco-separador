@@ -25,13 +25,19 @@ plataforma errada.
 """
 
 import re
+import sys
+from pathlib import Path
 
 # Precisam bater com os #define do firmware.
 NUM_SERVOS = 4
 INTERVALO_PASSO_MS = 20
 DURACAO_MIN_MS = 80
 JANELA_LOTE_MS = 50
+
+# Resolução do PCA9685 na faixa 102-492: 390 contagens para 180 graus.
+GRAUS_POR_CONTAGEM = 180.0 / 390.0
 SPEED_MAX = 150
+VEL_GARRA_MAX = 1000
 
 
 # ---------------------------------------------------------------------------
@@ -110,9 +116,16 @@ def dispatch(texto):
         return "ERR BAD_ARGS" if not id_ok(i) or a > b else "LIM set"
     elif cmd == "LIM" and n == 1:
         return "LIM show"
+    elif cmd == "SPEED" and n == 1:
+        return "SPEED show"
     elif cmd == "SPEED" and n == 2:
         a = atof(tok[1])
         return "ERR BAD_ARGS" if a <= 0 or a > SPEED_MAX else "SPEED"
+    elif cmd == "SPEEDG" and n == 1:
+        return "SPEEDG show"
+    elif cmd == "SPEEDG" and n == 2:
+        a = atof(tok[1])
+        return "ERR BAD_ARGS" if a < 0 or a > VEL_GARRA_MAX else "SPEEDG"
     elif cmd == "DETACH" and n == 2 and tok[1] == "ALL":
         return "DETACH ALL"
     elif cmd == "DETACH" and n == 2:
@@ -127,6 +140,18 @@ def dispatch(texto):
     elif cmd == "PULSO" and n == 4:
         i, pi, pj = atoi(tok[1]), atoi(tok[2]), atoi(tok[3])
         return "ERR BAD_ARGS" if not id_ok(i) or pi < 0 or pj > 4095 or pi >= pj else "PULSO"
+    elif cmd == "AMP" and n == 1:
+        return "AMP"
+    elif cmd == "ZERO" and n == 1:
+        return "ZERO"
+    elif cmd == "SENS" and n == 2:
+        s_ = atof(tok[1])
+        return "ERR BAD_ARGS" if s_ < 1.0 or s_ > 1000.0 else "SENS"
+    elif cmd == "LIMAMP" and n == 2:
+        a = atof(tok[1])
+        return "ERR BAD_ARGS" if a < 0.0 or a > 5.0 else "LIMAMP set"
+    elif cmd == "LIMAMP" and n == 1:
+        return "LIMAMP show"
     elif cmd == "HELP" and n == 1:
         return "HELP"
     else:
@@ -154,6 +179,15 @@ CASOS_DISPATCH = [
 
     # prefixos que poderiam se engolir: SET/SPEED/SWEEP/STOP, GET/GET ALL
     ("SPEED 60", "SPEED"), ("SWEEP 0 10 30", "SWEEP"),
+    # SPEEDG comeca com SPEED: strcmp e exato, mas e exatamente o tipo de
+    # colisao que ja mordeu este parser antes.
+    ("SPEED", "SPEED show"), ("SPEEDG", "SPEEDG show"),
+    ("SPEEDG 500", "SPEEDG"), ("SPEEDG 1000", "SPEEDG"),
+    ("SPEEDG 0", "SPEEDG"),            # 0 = sem suavizacao, e o padrao
+    ("SPEEDG -1", "ERR BAD_ARGS"), ("SPEEDG 1001", "ERR BAD_ARGS"),
+    ("SPEEDG 200 3", "ERR UNKNOWN"), ("SPEEDGG 500", "ERR UNKNOWN"),
+    # o teto da garra e maior que o do braco: 200 recusa num e aceita no outro
+    ("SPEED 200", "ERR BAD_ARGS"), ("SPEEDG 200", "SPEEDG"),
     ("GET 3", "GET"), ("LIM 0 0 180", "LIM set"),
     ("DETACH 0", "DETACH"), ("ATTACH 0", "ATTACH"), ("PULSO 1 150 600", "PULSO"),
 
@@ -171,6 +205,16 @@ CASOS_DISPATCH = [
 
     # o firmware come espaço das pontas antes de comparar
     ("  HOME", "HOME"), ("SET 1 45  ", "SET"), ("\tGET ALL ", "GET ALL"),
+
+    # sensor de corrente
+    ("AMP", "AMP"), ("ZERO", "ZERO"),
+    ("SENS 185", "SENS"), ("SENS 100", "SENS"), ("SENS 66", "SENS"),
+    ("LIMAMP 0.8", "LIMAMP set"), ("LIMAMP 0", "LIMAMP set"),   # 0 desliga
+    ("LIMAMP", "LIMAMP show"),
+    ("SENS 0", "ERR BAD_ARGS"), ("SENS 5000", "ERR BAD_ARGS"),
+    ("LIMAMP -1", "ERR BAD_ARGS"), ("LIMAMP 9", "ERR BAD_ARGS"),
+    ("AMP 3", "ERR UNKNOWN"),          # AMP nao aceita argumento
+    ("SET 3 45", "SET"),               # SET continua funcionando na garra
 ]
 
 
@@ -225,15 +269,21 @@ class BracoSimulado:
         self.t += INTERVALO_PASSO_MS
         for i in range(NUM_SERVOS):
             if self.duracao[i] == 0:
-                self.atual[i] = self.alvo[i]
-                continue
-            decorrido = self.t - self.t_inicio[i]
-            if decorrido >= self.duracao[i]:
-                self.atual[i] = self.alvo[i]
-                self.duracao[i] = 0
+                pos = self.alvo[i]
             else:
-                p = decorrido / self.duracao[i]
-                self.atual[i] = self.origem[i] + (self.alvo[i] - self.origem[i]) * suaviza(p)
+                decorrido = self.t - self.t_inicio[i]
+                if decorrido >= self.duracao[i]:
+                    pos = self.alvo[i]
+                    self.duracao[i] = 0
+                else:
+                    p = decorrido / self.duracao[i]
+                    pos = self.origem[i] + (self.alvo[i] - self.origem[i]) * suaviza(p)
+                    # Gruda no alvo abaixo de meia contagem, sem encerrar o
+                    # movimento: encerrar desincronizaria o lote.
+                    if abs(self.alvo[i] - pos) < GRAUS_POR_CONTAGEM * 0.5:
+                        pos = self.alvo[i]
+
+            self.atual[i] = pos
 
     def perfil(self, i):
         """Velocidades instantâneas (°/s) até a junta i parar."""
@@ -271,6 +321,40 @@ def testa_movimento():
 
     duracao_s = len(vels) * INTERVALO_PASSO_MS / 1000.0
     checa(abs(duracao_s - 1.5) < 0.05, f"90 graus a 60/s deveria durar 1.5 s, deu {duracao_s:.2f}")
+
+    # --- a cauda da curva não vira ticks isolados -----------------------
+    #
+    # A smootherstep chega com velocidade zero, então os últimos graus saem
+    # em passos cada vez menores. Abaixo de meia contagem de pulso eles
+    # deixam de virar movimento: o braço "acerta aos poucos", em ticks
+    # espaçados. O corte encerra ali, no mesmo destino.
+    b = BracoSimulado(60.0)
+    b.define_alvo(0, 180.0)
+    while b.duracao[0] != 0:
+        b.passo()
+    checa(abs(b.atual[0] - 180.0) < 1e-9,
+          f"deveria terminar exatamente no alvo, veio {b.atual[0]}")
+
+    # O que importa não é quantas vezes o ângulo muda, e sim quantas
+    # CONTAGENS DE PULSO distintas saem: é só isso que o servomotor vê.
+    def conta(angulo):
+        return round(102 + angulo / 180.0 * 390)
+
+    b = BracoSimulado(10.0)          # velocidade baixa: é onde dói
+    b.define_alvo(0, 135.0)
+    contagens = []
+    while b.duracao[0] != 0:
+        b.passo()
+        if abs(135.0 - b.atual[0]) < GRAUS_POR_CONTAGEM:
+            c = conta(b.atual[0])
+            if not contagens or c != contagens[-1]:
+                contagens.append(c)
+    checa(len(contagens) <= 2,
+          f"na última contagem de curso deveriam sair no máximo 2 valores "
+          f"de pulso, saíram {len(contagens)}: {contagens}")
+    checa(contagens and contagens[-1] == conta(135.0),
+          f"o último pulso escrito deveria ser o do alvo ({conta(135.0)}), "
+          f"veio {contagens[-1] if contagens else None}")
 
     # --- movimento minúsculo ainda é suavizado --------------------------
     b = BracoSimulado(60.0)
@@ -329,6 +413,323 @@ def testa_movimento():
 
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# 3. Sensor de corrente e alívio de travamento
+# ---------------------------------------------------------------------------
+
+# Precisam bater com o firmware.
+GRACA_STALL_MS = 300
+INTERVALO_ALIVIO_MS = 50
+PASSO_ALIVIO = 1.0
+ALIVIO_MAX = 15.0
+LIM_MIN_GARRA, LIM_MAX_GARRA = 30.0, 130.0
+
+
+def contagens_por_amp(mv_por_amp=185.0):
+    """Espelha contagensPorAmp(): ratiométrico, VCC cancela."""
+    return mv_por_amp * 1023.0 / 5000.0
+
+
+class GarraComSensor:
+    """
+    Modelo de verificaStall() para a garra, com corrente injetada pelo teste.
+
+    Não modela o servo físico: o teste dita a corrente a cada passo e observa
+    o que o firmware faz com o ângulo comandado e com as mensagens.
+    """
+
+    def __init__(self, limite_amp=0.8, atual=90.0, origem=90.0):
+        self.limite = limite_amp
+        self.atual = atual
+        self.alvo = atual
+        self.origem = origem
+        self.t = 0
+        self.t_inicio = 0
+        self.ligado = True
+        self.em_alivio = False
+        self.acumulado = 0.0
+        self.direcao = 0.0
+        self.t_ultimo_alivio = 0
+        self.desistiu = False
+        self.msgs = []
+
+    def limita(self, a):
+        return max(LIM_MIN_GARRA, min(LIM_MAX_GARRA, a))
+
+    def passo(self, corrente, dt_ms=5):
+        self.t += dt_ms
+        if self.limite <= 0 or not self.ligado:
+            return
+        corrente = abs(corrente)
+
+        if self.em_alivio:
+            if corrente < self.limite * 0.8:
+                self.em_alivio = False
+                self.msgs.append(("OK ALIVIO", round(self.atual, 1)))
+                return
+            if self.acumulado >= ALIVIO_MAX:
+                self.em_alivio = False
+                self.desistiu = True
+                self.msgs.append(("ERR STALL_PERSISTE", round(corrente, 2)))
+                return
+            if self.t - self.t_ultimo_alivio >= INTERVALO_ALIVIO_MS:
+                self.t_ultimo_alivio = self.t
+                novo = self.limita(self.atual + self.direcao * PASSO_ALIVIO)
+                self.atual = self.alvo = self.origem = novo
+                self.acumulado += PASSO_ALIVIO
+            return
+
+        if corrente <= self.limite:
+            self.desistiu = False
+            return
+        if self.desistiu:
+            return
+        if self.t - self.t_inicio < GRACA_STALL_MS:
+            return
+
+        self.em_alivio = True
+        self.acumulado = 0.0
+        self.alvo = self.atual
+        de_onde = self.origem - self.atual
+        if abs(de_onde) > 0.5:
+            self.direcao = 1.0 if de_onde > 0 else -1.0
+        else:
+            meio = (LIM_MIN_GARRA + LIM_MAX_GARRA) / 2.0
+            self.direcao = 1.0 if meio > self.atual else -1.0
+        self.origem = self.atual
+        self.t_ultimo_alivio = self.t
+        self.msgs.append(("STALL", round(corrente, 2)))
+
+
+def testa_sensor():
+    falhas = []
+
+    def checa(cond, desc):
+        if not cond:
+            falhas.append(desc)
+
+    # --- conversão ratiométrica ----------------------------------------
+    cpa = contagens_por_amp(185.0)
+    checa(abs(cpa - 37.85) < 0.05, f"185 mV/A deveria dar ~37.85 cont/A, deu {cpa:.2f}")
+    corrente = (549.5 - 511.5) / cpa          # +38 contagens acima do zero
+    checa(abs(corrente - 1.0) < 0.02, f"+38 contagens deveria ser ~1.0 A, deu {corrente:.3f}")
+
+    # --- desligado (limite 0) nao faz nada, mesmo com corrente alta -----
+    g = GarraComSensor(limite_amp=0.0)
+    g.t_inicio = -10_000
+    for _ in range(200):
+        g.passo(3.0)
+    checa(not g.msgs and g.atual == 90.0, "com LIMAMP 0 nada deveria acontecer")
+
+    # --- abaixo do limite nao dispara --------------------------------------
+    g = GarraComSensor(limite_amp=0.8)
+    g.t_inicio = -10_000
+    for _ in range(200):
+        g.passo(0.5)
+    checa(not g.msgs, "corrente abaixo do limite nao deveria disparar")
+
+    # --- pico de partida dentro da graca e ignorado ------------------------
+    g = GarraComSensor(limite_amp=0.8)
+    g.t_inicio = 0
+    for _ in range(50):                        # 250 ms, dentro dos 300 de graca
+        g.passo(2.0)
+    checa(not g.msgs, "pico dentro da janela de graca nao deveria disparar")
+
+    # --- travou fechando: recua no sentido de onde veio (abrindo) ----------
+    # fechando = indo de 60 para 120; travou em 110 -> deve recuar para menos
+    g = GarraComSensor(limite_amp=0.8, atual=110.0, origem=60.0)
+    g.t_inicio = -10_000
+    g.passo(1.5)
+    checa(bool(g.msgs) and g.msgs[0][0] == "STALL", "deveria ter reportado STALL")
+    checa(g.direcao == -1.0, f"fechando de 60->120, alivio deveria recuar (-1), deu {g.direcao}")
+    # corrente continua alta por 3 passos de alivio, depois cai
+    for _ in range(int(3 * INTERVALO_ALIVIO_MS / 5)):
+        g.passo(1.5)
+    checa(abs(g.atual - 107.0) < 0.01, f"apos 3 passos deveria estar em 107, esta em {g.atual}")
+    g.passo(0.3)
+    checa(g.msgs[-1][0] == "OK ALIVIO", f"corrente caiu, deveria ter concluido; msgs={g.msgs}")
+    checa(not g.em_alivio, "deveria ter saido do modo alivio")
+    checa(g.alvo == g.atual, "apos alivio, alvo deve ser igual a atual (segura onde parou)")
+
+    # --- histerese ---------------------------------------------------------
+    g = GarraComSensor(limite_amp=1.0, atual=100.0, origem=60.0)
+    g.t_inicio = -10_000
+    g.passo(1.5)
+    g.passo(0.9)                                # acima de 0.8: continua aliviando
+    checa(g.em_alivio, "0.9 A com limite 1.0 nao deveria concluir (histerese 0.8)")
+    g.passo(0.7)
+    checa(not g.em_alivio, "0.7 A com limite 1.0 deveria concluir")
+
+    # --- travou parada (segurando): recua para o meio do curso -------------
+    g = GarraComSensor(limite_amp=0.8, atual=120.0, origem=120.0)
+    g.t_inicio = -10_000
+    g.passo(1.5)
+    checa(g.direcao == -1.0, f"parada em 120 (meio=80), deveria recuar para baixo, deu {g.direcao}")
+    g2 = GarraComSensor(limite_amp=0.8, atual=40.0, origem=40.0)
+    g2.t_inicio = -10_000
+    g2.passo(1.5)
+    checa(g2.direcao == 1.0, f"parada em 40 (meio=80), deveria recuar para cima, deu {g2.direcao}")
+
+    # --- nunca cai: desiste em 15 graus com erro ---------------------------
+    g = GarraComSensor(limite_amp=0.8, atual=110.0, origem=60.0)
+    g.t_inicio = -10_000
+    for _ in range(int(20 * INTERVALO_ALIVIO_MS / 5) + 10):
+        g.passo(2.0)
+    checa(g.msgs[-1][0] == "ERR STALL_PERSISTE",
+          f"corrente que nunca cai deveria terminar em STALL_PERSISTE, msgs={g.msgs[-2:]}")
+    checa(abs(g.atual - 95.0) < 0.01, f"deveria ter recuado exatamente 15 graus (110->95), esta em {g.atual}")
+    checa(not g.em_alivio, "apos desistir, nao deveria continuar em alivio")
+
+    # --- depois de desistir, nao reentra enquanto a corrente nao cair ------
+    g = GarraComSensor(limite_amp=0.8, atual=110.0, origem=60.0)
+    g.t_inicio = -10_000
+    for _ in range(int(20 * INTERVALO_ALIVIO_MS / 5) + 10):
+        g.passo(2.0)
+    n_msgs = len(g.msgs)
+    for _ in range(400):                       # mais 2 s de corrente alta
+        g.passo(2.0)
+    checa(len(g.msgs) == n_msgs, f"apos desistir nao deveria reentrar; msgs novas: {g.msgs[n_msgs:]}")
+    checa(abs(g.atual - 95.0) < 0.01, f"apos desistir deveria ficar parada em 95, foi a {g.atual}")
+    g.passo(0.3)                               # corrente normaliza
+    g.passo(2.0)                               # e sobe de novo: agora pode vigiar
+    checa(g.msgs[-1][0] == "STALL", "apos a corrente cair, uma nova subida deveria disparar de novo")
+
+    # --- alivio respeita o limite da junta ---------------------------------
+    g = GarraComSensor(limite_amp=0.8, atual=35.0, origem=60.0)   # perto do minimo 30
+    g.t_inicio = -10_000
+    for _ in range(int(20 * INTERVALO_ALIVIO_MS / 5) + 10):
+        g.passo(2.0)
+    checa(g.atual >= LIM_MIN_GARRA, f"alivio nao pode passar do limite da junta, foi a {g.atual}")
+
+    return falhas
+
+
+# ---------------------------------------------------------------------------
+# Tabela da sequencia DEMO
+# ---------------------------------------------------------------------------
+# Esta nao e uma reimplementacao: le a tabela do .ino de verdade e confere as
+# invariantes dela. Serve porque a tabela e editada a mao, e as duas maneiras
+# de errar nao doem na compilacao:
+#
+#   - garra junto com outra junta no mesmo passo: as duas caem no mesmo lote
+#     e dividem a duracao do movimento mais longo. A garra fica abaixo da zona
+#     morta e trava, parecendo que o comando nao chegou.
+#   - angulo fora de lim_min/lim_max: o firmware satura em silencio e o passo
+#     simplesmente nao vai aonde o roteiro diz.
+
+RAIZ = Path(__file__).resolve().parent.parent
+INO = RAIZ / "firmware" / "braco_firmware" / "braco_firmware.ino"
+
+
+def _extrai_vetor(fonte, nome):
+    corpo = re.search(rf"{nome}\[NUM_SERVOS\]\s*=\s*\{{([^}}]*)\}}", fonte).group(1)
+    return [float(x) for x in re.findall(r"-?\d+\.?\d*", corpo)]
+
+
+def _extrai_demo(fonte):
+    corpo = re.search(r"demo_passos\[\]\[NUM_SERVOS\]\s*PROGMEM\s*=\s*\{(.*?)\n\};",
+                      fonte, re.S).group(1)
+    passos = []
+    for linha in corpo.splitlines():
+        linha = linha.split("//")[0]
+        m = re.search(r"\{([^}]*)\}", linha)
+        if m:
+            passos.append([int(x) for x in re.findall(r"-?\d+", m.group(1))])
+    return passos
+
+
+def testa_demo():
+    falhas = []
+    fonte = INO.read_text(encoding="utf-8")
+    lo = _extrai_vetor(fonte, "lim_min")
+    hi = _extrai_vetor(fonte, "lim_max")
+    passos = _extrai_demo(fonte)
+    idx_garra = int(re.search(r"IDX_GARRA\s*=\s*(\d+)", fonte).group(1))
+
+    if not passos:
+        return ["nao consegui ler demo_passos do .ino"]
+
+    for k, passo in enumerate(passos, start=1):
+        if len(passo) != len(lo):
+            falhas.append(f"passo {k}: {len(passo)} angulos para {len(lo)} juntas")
+            continue
+        moveis = [i for i, a in enumerate(passo) if a >= 0]
+        if not moveis:
+            falhas.append(f"passo {k}: nao move nada")
+        if idx_garra in moveis and len(moveis) > 1:
+            falhas.append(f"passo {k}: garra junto com outra junta (dividem a duracao do lote)")
+        for i in moveis:
+            if not lo[i] <= passo[i] <= hi[i]:
+                falhas.append(f"passo {k}: junta {i} em {passo[i]}, fora de [{lo[i]:.0f}, {hi[i]:.0f}]")
+
+    # Divergencia com o pegada_manual.py nao e falha: os dois existem para
+    # serem ajustados, e o fluxo e ajustar no Python (rapido) e so depois
+    # passar para o firmware. Mas vale avisar, senao o video mostra um
+    # roteiro e o script mostra outro.
+    try:
+        sys.path.insert(0, str(RAIZ))
+        import pegada_manual
+        py = [{c: a for c, a in alvos.items()} for _, alvos in pegada_manual.SEQUENCIA]
+        ino = [{i: a for i, a in enumerate(p) if a >= 0} for p in passos]
+        if py != ino:
+            print("  AVISO: a sequencia do pegada_manual.py e a tabela DEMO do .ino")
+            print("         estao diferentes. Ajuste no Python e passe para o firmware.")
+    except Exception as e:
+        print(f"  AVISO: nao deu para comparar com pegada_manual.py ({e})")
+
+    return falhas
+
+
+def testa_limites_sincronizados():
+    """
+    Os limites de junta vivem em tres arquivos. Aqui so se compara.
+
+    A FONTE e o .ino, decidido em 05/11: foi com aqueles valores que o braco
+    foi operado na bancada. O braco.json e o pegada_manual.py copiam de la.
+
+    Isto e FALHA e nao aviso porque o modo de errar e silencioso: o
+    coletar.py empurra os limites do JSON por LIM ao conectar, entao um JSON
+    desatualizado AFROUXA na conexao um limite que a bancada mostrou ser
+    necessario, e so se descobre quando o braco bate. Foi assim em 31/10.
+    """
+    import json
+
+    fonte = INO.read_text(encoding="utf-8")
+    ino_lo = _extrai_vetor(fonte, "lim_min")
+    ino_hi = _extrai_vetor(fonte, "lim_max")
+
+    cfg = json.loads((RAIZ / "config" / "braco.json").read_text(encoding="utf-8"))
+    por_canal = {j["canal"]: (nome, j) for nome, j in cfg["juntas"].items()}
+
+    try:
+        sys.path.insert(0, str(RAIZ))
+        import pegada_manual
+        py_lim = pegada_manual.LIMITES
+    except Exception:
+        py_lim = {}
+
+    divergencias = []
+    for canal in range(len(ino_lo)):
+        nome, junta = por_canal.get(canal, (f"canal {canal}", {}))
+        fontes = {
+            "braco.json": (junta.get("minimo"), junta.get("maximo")),
+            ".ino": (ino_lo[canal], ino_hi[canal]),
+        }
+        if canal in py_lim:
+            fontes["pegada_manual.py"] = py_lim[canal]
+
+        valores = {k: (float(a), float(b)) for k, (a, b) in fontes.items()
+                   if a is not None and b is not None}
+        if len(set(valores.values())) > 1:
+            divergencias.append((nome, valores))
+
+    return [
+        f"{nome}: " + "  ".join(f"{k} {a:.0f}-{b:.0f}" for k, (a, b) in valores.items())
+        + "  (a fonte e o .ino)"
+        for nome, valores in divergencias
+    ]
+
+
 def main():
     falhas = 0
 
@@ -342,10 +743,27 @@ def main():
     falhas_mov = testa_movimento()
     for f in falhas_mov:
         print(f"  FALHA movimento: {f}")
+
+    falhas_demo = testa_demo()
+    for f in falhas_demo:
+        print(f"  FALHA tabela DEMO: {f}")
+    print(f"{'tabela DEMO do firmware ok' if not falhas_demo else f'tabela DEMO -> {len(falhas_demo)} falha(s)'}")
+
+    falhas_limites = testa_limites_sincronizados()
+    for f in falhas_limites:
+        print(f"  FALHA limites: {f}")
+    if not falhas_limites:
+        print("limites de junta iguais nos tres arquivos")
+
+    falhas_sensor = testa_sensor()
+    for f in falhas_sensor:
+        print(f"  FALHA sensor: {f}")
+    print(('todos os ' if not falhas_sensor else '') + 'testes do sensor/alivio ' + ('passaram' if not falhas_sensor else f'-> {len(falhas_sensor)} falha(s)'))
     print(f"{'todos os' if not falhas_mov else ''} testes de movimento "
           f"{'passaram' if not falhas_mov else f'-> {len(falhas_mov)} falha(s)'}")
 
-    total = falhas + len(falhas_mov)
+    total = (falhas + len(falhas_mov) + len(falhas_sensor)
+             + len(falhas_demo) + len(falhas_limites))
     print("\nOK" if total == 0 else f"\n{total} falha(s)")
     return 1 if total else 0
 

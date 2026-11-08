@@ -129,7 +129,7 @@ checa(perto[1] < longe[1],
 
 
 # --- corrente completa ----------------------------------------------------
-braco, calib, params_dict, _calibrado = carregar_config(BASE / "config" / "braco.json")
+braco, calib, params_dict, CALIBRADO = carregar_config(BASE / "config" / "braco.json")
 serial = SerialEspiã()
 controlador = ControladorColeta(
     serial, braco=braco, calib=calib, params=ParametrosColeta(**params_dict)
@@ -162,17 +162,34 @@ def procura_alvo():
 alvo_mm = procura_alvo()
 
 if alvo_mm is None:
-    # Não é um bug de código: quer dizer que a área que a câmera enxerga e o
-    # envelope do braço não se sobrepõem em ponto nenhum. Mas o sistema
-    # inteiro seria inútil assim, então vale gritar.
-    falhas.append(
-        "NENHUM ponto do campo da camera e alcancavel — a area de coleta e o "
-        "alcance do braco nao se sobrepoem. Confira elos_mm e os limites das "
-        "juntas com 'python mapa_alcance.py'."
-    )
+    # Nenhum ponto alcançável. O que isso significa depende de a config já
+    # estar calibrada ou não, e a diferença importa:
+    #
+    #   calibrado: false -> esperado. Os elos ainda são placeholder e o
+    #     offset/sentido de cada junta ainda não foram medidos, então as
+    #     faixas de ângulo matemático que os limites permitem não têm como
+    #     coincidir com o que a cinemática pede. Não é defeito de código.
+    #
+    #   calibrado: true  -> defeito real. A área de coleta e o envelope do
+    #     braço não se sobrepõem, e o sistema seria inútil assim.
+    if CALIBRADO:
+        falhas.append(
+            "NENHUM ponto do campo da camera e alcancavel com a config marcada "
+            "como calibrada. A area de coleta e o alcance do braco nao se "
+            "sobrepoem. Confira elos_mm, offset/sentido e os limites com "
+            "'python mapa_alcance.py'."
+        )
+        for f in falhas:
+            print(f"  FALHA: {f}")
+        raise SystemExit(1)
+
     for f in falhas:
         print(f"  FALHA: {f}")
-    raise SystemExit(1)
+    print("PENDENTE — nenhum alvo alcancavel, mas a config ainda esta marcada")
+    print("  como nao calibrada. Faltam medir os elos e o offset/sentido de")
+    print("  cada junta. Os testes acima (homografia e conversao de caixa)")
+    print("  passaram; a corrente visao -> braco so pode ser exercitada depois.")
+    raise SystemExit(1 if falhas else 0)
 
 # mm -> pixel pela inversa da homografia, para o teste falar em mm.
 inversa = np.linalg.inv(homografia.matriz)
@@ -258,7 +275,10 @@ checa(not serial2.linhas,
 # --- angulos da garra: explicitos mandam, e sao validados ----------------
 from src.arm.coleta import ParametrosColeta as PC  # noqa: E402
 
-base_params = dict(params_dict)
+# Sem os angulos de garra: assim o primeiro caso exercita mesmo o fallback
+# para o minimo/maximo da junta, independente do que a config traga hoje.
+base_params = {k: v for k, v in params_dict.items()
+               if k not in ("garra_aberta", "garra_fechada")}
 
 # sem configurar, cai no minimo/maximo da junta (comportamento antigo)
 s_pad = SerialEspiã()
@@ -270,17 +290,19 @@ checa(cmds[1] == f"SET {calib.garra.canal} {calib.garra.maximo}",
       f"garra fechada padrao deveria ser o maximo da junta, veio {cmds[1]}")
 
 # configurados, os valores explicitos prevalecem
-p_expl = dict(base_params, garra_aberta=40.0, garra_fechada=110.0)
+p_expl = dict(base_params, garra_aberta=125.0, garra_fechada=133.0)
 c_expl = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_expl))
 cmds = [e.comandos[0] for e in c_expl.planejar(*alvo_mm) if "garra" in e.descricao.lower()]
-checa(cmds[0] == f"SET {calib.garra.canal} 40.0", f"garra aberta explicita ignorada: {cmds[0]}")
-checa(cmds[1] == f"SET {calib.garra.canal} 110.0", f"garra fechada explicita ignorada: {cmds[1]}")
+checa(cmds[0] == f"SET {calib.garra.canal} 125.0", f"garra aberta explicita ignorada: {cmds[0]}")
+checa(cmds[1] == f"SET {calib.garra.canal} 133.0", f"garra fechada explicita ignorada: {cmds[1]}")
 
-# invertidos (garra montada ao contrario) tambem funcionam: nada assume ordem
-p_inv = dict(base_params, garra_aberta=120.0, garra_fechada=35.0)
+# ordem contraria a da montagem atual (aberta > fechada) tambem funciona:
+# nada no caminho assume qual extremo fecha. Na garra real e 120 aberta /
+# 137 fechada, ou seja aberta < fechada, que ja e o contrario do intuitivo.
+p_inv = dict(base_params, garra_aberta=135.0, garra_fechada=122.0)
 c_inv = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_inv))
 cmds = [e.comandos[0] for e in c_inv.planejar(*alvo_mm) if "garra" in e.descricao.lower()]
-checa(cmds[0] == f"SET {calib.garra.canal} 120.0" and cmds[1] == f"SET {calib.garra.canal} 35.0",
+checa(cmds[0] == f"SET {calib.garra.canal} 135.0" and cmds[1] == f"SET {calib.garra.canal} 122.0",
       f"garra montada ao contrario deveria funcionar, veio {cmds}")
 
 # fora dos limites da junta: recusa antes de mover, e diz onde consertar

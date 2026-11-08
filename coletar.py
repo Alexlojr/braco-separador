@@ -52,6 +52,7 @@ from src.vision.deteccao import (  # noqa: E402
     CONFIANCA_MINIMA,
     melhor_deteccao,
 )
+from src.vision.fonte import aplicar_rotacao  # noqa: E402
 from src.vision.homografia import CalibracaoInvalida, Homografia  # noqa: E402
 
 CAMINHO_CONFIG = BASE_DIR / "config" / "braco.json"
@@ -94,7 +95,7 @@ def abrir_camera(largura=640, altura=480):
         )
         cam.start()
         time.sleep(2)  # deixa o auto-exposure assentar antes do primeiro frame
-        return lambda: cam.capture_array(), cam.stop
+        return lambda: aplicar_rotacao(cam.capture_array()), cam.stop
 
     except ImportError:
         import cv2
@@ -107,7 +108,7 @@ def abrir_camera(largura=640, altura=480):
             ok, frame = cap.read()
             if not ok:
                 raise RuntimeError("falha ao capturar frame")
-            return frame
+            return aplicar_rotacao(frame)
 
         return captura, cap.release
 
@@ -144,6 +145,9 @@ def main() -> int:
 
     params_est = ParametrosEstabilidade.de_json(CAMINHO_CONFIG)
 
+    import json
+    acs = json.loads(CAMINHO_CONFIG.read_text(encoding="utf-8")).get("acs712", {})
+
     # ---- serial ------------------------------------------------------
     if args.dry_run:
         serial = SerialDeMentira()
@@ -162,11 +166,22 @@ def main() -> int:
             # segue permitindo um ângulo que já se sabe que bate.
             aceitas = serial.enviar_limites(calib)
             if aceitas == 4:
-                print("Limites de junta enviados ao firmware.\n")
+                print("Limites de junta enviados ao firmware.")
             else:
                 print(f"AVISO: o firmware aceitou {aceitas}/4 limites. Ele pode ser")
                 print("       uma versão antiga, sem o comando LIM. Os limites do")
-                print("       sketch é que valem — confira se batem com o JSON.\n")
+                print("       sketch é que valem — confira se batem com o JSON.")
+
+            if serial.configurar_sensor(acs):
+                lim = float(acs.get("limite_stall_amp", 0.0))
+                if lim > 0:
+                    print(f"Sensor de corrente: alívio de travamento ligado em {lim:.2f} A.\n")
+                else:
+                    print("Sensor de corrente configurado; alívio DESLIGADO (limite 0).")
+                    print("       Meça a corrente de pega com AMP e ajuste limite_stall_amp.\n")
+            else:
+                print("AVISO: firmware não aceitou SENS/LIMAMP. Sensor de corrente")
+                print("       indisponível ou firmware antigo.\n")
         else:
             print("AVISO: Arduino não encontrado. Rodando só na simulação.\n")
 
@@ -208,7 +223,7 @@ def main() -> int:
                 continue
 
             x_mm, y_mm = leitura.x_mm, leitura.y_mm
-            print(f"\n{modelo.names[classe]} assentado em "
+            print(f"\n{deteccao.rotulo} assentado em "
                   f"({x_mm:.0f}, {y_mm:.0f}) mm — {leitura.motivo}")
 
             pode, motivo = controlador.alcancavel(x_mm, y_mm)
@@ -222,7 +237,16 @@ def main() -> int:
 
             try:
                 for etapa in controlador.executar(x_mm, y_mm):
-                    print(f"  {etapa.descricao}")
+                    linha = f"  {etapa.descricao}"
+                    # Depois de fechar, a corrente da garra é o dado que diz se
+                    # a pega por encaixe está funcionando sem forçar o servo.
+                    # Vai direto para o capítulo de resultados.
+                    if "fechando" in etapa.descricao.lower():
+                        medir = getattr(serial, "corrente", None)
+                        amp = medir() if medir else None
+                        if amp is not None:
+                            linha += f"  (garra: {amp:.2f} A)"
+                    print(linha)
             except PoseInalcancavel as e:
                 print(f"  coleta abortada: {e}")
 
