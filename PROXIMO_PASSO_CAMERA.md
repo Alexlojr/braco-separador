@@ -145,6 +145,33 @@ onde hoje está o `[PREENCHER]` da seção 4.4.3. Critério: **5 mm**.
 
 ---
 
+## Passo 4 — FEITO em 09/11/2026
+
+Calibrado no modo `--clique` (a detecção automática não pegou a placa: branco
+sobre branco, 2 níveis de cinza de diferença).
+
+Área de coleta: 100 x 100 mm, canto perto-esquerda em (-50, 130).
+
+Erro nos pontos de conferência, que são os que não entraram no cálculo:
+
+| ponto medido | reprojetado | erro |
+|---|---|---|
+| (0, 150) | (-0,5 , 151,0) | 1,1 mm |
+| (-40, 185) | (-40,5 , 184,5) | 0,7 mm |
+| (34, 210) | (33,4 , 212,1) | 2,2 mm |
+
+**Médio 1,3 mm, máximo 2,2 mm.** Critério era 5 mm.
+
+O erro cresce com a distância porque a câmera está oblíqua e a borda de trás
+tem menos pixels por milímetro. O máximo de 2,2 mm coincide com a resolução
+do PCA9685 na extremidade do braço (0,46 graus por contagem, ~2 mm): visão e
+atuação erram da mesma ordem, e melhorar só uma não melhora o conjunto.
+
+Refazer é obrigatório se a câmera, a área de coleta ou a base do braço se
+moverem.
+
+---
+
 ## Passo 5 — ensaio sem energia
 
 ```bash
