@@ -36,7 +36,7 @@
 //                         o padrão; acima de ~500 não muda nada
 //   DETACH <id>|ALL       corta o PWM: dá pra mexer a junta com a mão
 //   ATTACH <id>|ALL       religa o PWM na posição atual
-//   RAW <id> <pulso>      escreve a contagem de pulso crua (150-600 típico)
+//   RAW <id> <pulso>      escreve a contagem de pulso crua (102-492 a 50 Hz)
 //   PULSO <id> <min> <max>  guarda a calibração de pulso achada com RAW
 //   HELP                  lista os comandos
 //
@@ -81,28 +81,22 @@ const uint8_t IDX_COTOVELO = 2;
 // ---------------------------------------------------------------------------
 // LIMITE ACOPLADO COTOVELO x OMBRO
 // ---------------------------------------------------------------------------
-// O limite do cotovelo nao e fixo: depende de onde o ombro esta. Com o braco
-// recolhido o antebraco encosta no proprio braco antes de chegar no lim_min.
+// O limite do cotovelo depende de onde o ombro esta: com o braco recolhido
+// o antebraco encosta nele antes de chegar no lim_min.
 //
-// Medido na bancada em 03 e 07/11, procurando o menor servo 2 que ainda nao
-// encosta, com DETACH e a mao antes de deixar o servo tentar:
+// Medido com DETACH e a mao, procurando o menor s2 que ainda nao encosta:
 //
-//     s1=100 -> encostou em s2=135
-//     s1=130 -> encostou em s2= 90
-//     s1=160 -> s2=70 livre, e ainda dava pra descer
+//     s1=100 -> encosta em s2=135      ajuste
+//     s1=130 -> encosta em s2= 90      ajuste
+//     s1=115 -> encosta em s2=115      VALIDACAO: a reta previa 112,5
+//     s1=160 -> s2=70 livre, com folga
+//     s1= 90 -> encosta em s2=136, mas ali quem bate e a GARRA
 //
-// Os dois primeiros dao a reta s2 = 285 - 1,5*s1. O terceiro ponto confere.
-// E um QUARTO ponto, medido depois e fora do ajuste, validou: em s1=115 a
-// reta previa 112,5 e a bancada achou 115. Erro de 2,5 graus.
+// A margem de 15 cobre a ultima linha: outra colisao, outra fronteira, e a
+// reta e otimista nessa ponta.
 //
-// A MARGEM existe por causa de um quinto ponto que NAO cai na reta: em s1=90
-// a colisao vem em s2=136, catorze graus acima do previsto. Ali quem encosta
-// e a garra, nao o antebraco — e outra colisao, com outra fronteira, e a reta
-// e otimista nessa ponta. Quinze graus cobrem a diferenca observada.
-//
-// A regra vale nos DOIS sentidos. Nao adianta so proibir o cotovelo de
-// descer: mandar o ombro recolher com o cotovelo ja baixo chega no mesmo
-// lugar pelo outro caminho.
+// Vale nos DOIS sentidos - recolher o ombro com o cotovelo ja baixo chega
+// na mesma colisao pelo outro caminho.
 const float ACOP_A = 285.0;
 const float ACOP_B = 1.5;
 const float ACOP_MARGEM = 15.0;
@@ -110,66 +104,39 @@ const float ACOP_MARGEM = 15.0;
 const int PWM_FREQ = 50;
 const unsigned long INTERVALO_PASSO_MS = 20;   // 50 Hz de atualização
 
-// Calibração de pulso, por servo, em contagens de 0-4095.
+// Calibração de pulso, em contagens de 0-4095.
 //
-// CUIDADO COM O PAR 150-600 QUE CIRCULA POR AÍ. Ele vem do exemplo da
-// Adafruit, que roda a 60 Hz. Aqui a frequência é 50 Hz, e a contagem passa
-// a valer 4,88 us em vez de 4,07: os mesmos números viram 732-2930 us, bem
-// além dos 500-2400 us que um SG90 ou MG90S aceita. O efeito é que o ângulo
-// comandado não corresponde ao real, a faixa útil fica espremida, e acima de
-// ~137° o servomotor é empurrado contra o batente e fica forçando.
+// NÃO use o par 150-600 dos exemplos da Adafruit: aquilo é para 60 Hz. A
+// 50 Hz cada contagem vale 4,883 us, e 150-600 viram 732-2930 us — além dos
+// 500-2400 us que SG90 e MG90S aceitam, empurrando o servo contra o batente
+// na parte de cima do curso. O equivalente correto é 102-492.
 //
-//   us por contagem = 1.000.000 / frequencia / 4096
-//   a 50 Hz -> 4,883 us      500 us = contagem 102     2400 us = contagem 492
-//
-// Os valores abaixo são o equivalente correto a 50 Hz, e continuam sendo um
-// ponto de partida: cada peça varia. Ache o real com RAW, partindo do meio
-// (300) e abrindo aos poucos, e guarde com PULSO.
+// Ponto de partida; cada peça varia. Ache com RAW partindo de 300, grave
+// com PULSO.
 int pulso_min[NUM_SERVOS] = {102, 102, 102, 102};
 int pulso_max[NUM_SERVOS] = {492, 492, 492, 492};
 
-// Limites por junta, em graus de servo.
+// Limites por junta, em graus de servo. MEDIDOS NA BANCADA, E SÃO A FONTE:
+// config/braco.json e pegada_manual.py copiam daqui.
 //
-// ESTES VALORES SÃO A FONTE. Foi com eles que o braço foi operado na bancada;
-// config/braco.json e pegada_manual.py copiam daqui, e não o contrário.
+// O coletar.py empurra os limites do JSON por LIM ao conectar, então um JSON
+// desatualizado AFROUXA na conexão um limite necessário. Por isso
+// testa_limites_sincronizados() falha se os três divergirem.
 //
-// O coletar.py empurra os limites do JSON por LIM ao conectar (ver
-// enviar_limites em mock_arm_serial.py). Isso não inverte a autoridade: o JSON
-// é que precisa estar igual a isto, senão a coleta afrouxa na conexão um
-// limite que a bancada mostrou ser necessário.
-//
-// testa_limites_sincronizados() em tests/test_firmware.py FALHA se os três
-// arquivos divergirem. Mudou aqui, muda nos outros dois.
-//
-// A proteção do firmware não é redundante: um SET digitado à mão no terminal
-// não passa por nenhuma checagem do lado Python.
-//
-// Valores ajustados na bancada em 31/10, depois de a tentativa de limite
-// acoplado atrapalhar o ajuste. São o que o braço faz de fato:
-//   ombro     90-180   o 160 anterior era observação parcial; a foto de
-//                      perfil mostra o braço em 180 sem forçar
-//   cotovelo  70-170   abaixo de 70 o antebraço gira para dentro e encosta
-//                      na estrutura
+// Abaixo de 70 o cotovelo gira para dentro e encosta na estrutura. A garra
+// é invertida: 120 abre, 137 fecha.
 float lim_min[NUM_SERVOS] = {  0.0, 90.0,  70.0,  120.0};
 float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 137.0};
 
-// Pose de repouso do HOME, medida no braço montado (outubro).
+// Pose de repouso do HOME.
 //
-// Importa mais do que parece: no boot o firmware assume esta pose como
-// posição inicial e escreve o pulso de uma vez, sem suavizar. Uma pose ruim
-// aqui é o movimento mais brusco que o sistema faz, e acontece toda vez que
-// se liga a alimentação.
+// No boot o firmware assume esta pose e escreve o pulso de uma vez, sem
+// suavizar — é o movimento mais brusco do sistema, e acontece a cada
+// energização. Ligue com o braço já perto dela.
 //
-//   base     90   centro, apontando para a área de coleta
-//   ombro   130   mantém o braço recolhido sem forçar
-//   cotovelo 135  PROVISÓRIO, mas é o valor com que o braço vem ligando sem
-//                 problema. Chegou a virar 90 por causa do limite acoplado
-//                 errado; sem a regra, o que vale é o que já foi observado.
-//   garra   123   levemente aberta. ABRE EM 120, FECHA EM 137 - a garra
-//                 e invertida em relacao ao que se supoe. Fica 3 graus
-//                 dentro do aberto e nao no 120 exato: o boot escreve
-//                 esta pose em velocidade maxima, e encostar de proposito
-//                 no fim de curso toda energizacao nao e boa ideia.
+//   base 90 aponta para a área de coleta | ombro 140 e cotovelo 120 recolhem
+//   sem forçar | garra 123 fica 3° dentro do aberto, porque encostar no fim
+//   de curso toda vez que liga não é boa ideia.
 float pose_repouso[NUM_SERVOS] = {90.0, 140.0, 120.0, 123.0};
 
 float atual[NUM_SERVOS];      // posição sendo escrita agora (segue a curva)
@@ -182,36 +149,24 @@ unsigned long duracao[NUM_SERVOS];    // quanto ele deve durar, em ms
 
 float velocidade = 160.0;      // graus por segundo, MÉDIA (ver suaviza())
 
-// Velocidade só da garra. Ela não está na cadeia cinemática, então não há
-// motivo para andar no mesmo ritmo do braço: o braço é devagar porque carrega
-// massa e porque a ponta tem que seguir um caminho; a garra só fecha.
+// Velocidade só da garra, com SPEEDG. Ela não está na cadeia cinemática, não
+// carrega massa e não precisa seguir caminho nenhum: não há motivo para andar
+// no ritmo do braço.
 //
-// 500 °/s fecha os 40° do curso em 80 ms, que é o piso DURACAO_MIN_MS abaixo.
-// Ou seja: a 500 a garra já está no mais rápido que este firmware entrega, e
-// aumentar mais não muda nada. O teto de 1000 existe só para não recusar um
-// número maior por teimosia.
+// 0 = SEM SUAVIZAÇÃO, e é o padrão. O curso da garra é de 17° (120 a 137),
+// que são só 37 contagens do PCA9685. Suavizado, o início do movimento — onde
+// a smootherstep tem derivada zero — fica abaixo de uma contagem, e o pulso
+// escrito não muda: a garra treme e não fecha. Era esse o defeito.
 //
-// E não adianta querer mais que isso: um SG90 faz ~0,1 s por 60° sem carga,
-// uns 600 °/s, então os 40° levam ~67 ms de qualquer jeito. O piso de 80 ms
-// está praticamente colado no limite mecânico do servo — a suavização da
-// garra custa uns 13 ms, e em troca tira o impacto das duas pontas.
-float velocidade_garra = 0.0;          // 0 = SEM SUAVIZACAO (ver abaixo)
+// O preço é o impacto nas duas pontas, inaceitável para o braço e irrelevante
+// para 17° de garra.
+float velocidade_garra = 0.0;
 const float VEL_GARRA_MAX = 1000.0;
 
-// SPEEDG 0 desliga a suavizacao da garra: o alvo e escrito de uma vez, no
-// proximo passo de controle. E o padrao porque o curso da garra e curto, e
-// curso curto suavizado cai abaixo da resolucao do PCA9685 (0,4615 graus por
-// contagem) justamente no inicio, onde a smootherstep tem derivada zero.
-//
-// O preco e o impacto nas duas pontas, que para o braco seria inaceitavel.
-// Para a garra nao e: ela nao carrega a cadeia, o curso e de 50 graus, e o
-// proprio servo limita a aceleracao.
-//
-// Mas escrever o pulso de uma vez NAO significa que o servo chegou. Ele leva
-// o tempo mecanico dele, e o BUSY precisa continuar dizendo 1 nesse intervalo
-// — senao o lado Python manda a proxima pose com a garra ainda a meio curso,
-// que foi exatamente o defeito do intervalo fixo de 0,6 s. Dai a estimativa
-// abaixo: velocidade mecanica conservadora de um SG90 com carga.
+// Escrever o pulso de uma vez NÃO significa que o servo chegou: ele leva o
+// tempo mecânico dele, e o BUSY precisa dizer 1 nesse intervalo. Senão o lado
+// Python manda a pose seguinte com a garra a meio curso, que foi o defeito do
+// intervalo fixo de 0,6 s. Estimativa conservadora de SG90 com carga.
 const float VEL_MECANICA_GARRA = 300.0;   // graus/s, para estimar o BUSY
 const unsigned long GARRA_ASSENTA_MIN_MS = 60;
 unsigned long t_garra_fim = 0;            // ate quando o BUSY conta a garra
@@ -241,30 +196,15 @@ float   sweep_de = 0, sweep_ate = 0;
 // ---------------------------------------------------------------------------
 // Sequência de demonstração
 // ---------------------------------------------------------------------------
-// Pega e solta rodando no próprio firmware, sem PC. É o mesmo roteiro do
-// pegada_manual.py, mas aqui o Arduino se vira sozinho: serve para gravar
-// vídeo e para a apresentação, onde não dá para depender de um notebook
-// conectado.
+// Pega e solta rodando no próprio firmware, sem PC — para vídeo e para a
+// apresentação. Mesmo roteiro do pegada_manual.py.
 //
-// Ângulos de SERVO, não matemáticos: isto não passa por offset nem por
-// cinemática, então funciona antes de o braço estar calibrado.
+// Ângulos de SERVO: não passa por offset nem por cinemática, então funciona
+// mesmo sem calibração. -1 = esta junta não se mexe neste passo.
 //
-// -1 quer dizer "esta junta não se mexe neste passo".
-//
-// DUAS REGRAS AO EDITAR A TABELA:
-//
-//   1. A garra sozinha no passo dela. Juntas comandadas no mesmo passo caem
-//      no mesmo lote e dividem a duração do movimento mais longo (ver
-//      JANELA_LOTE_MS). Um fechamento de 40° esticado para os 4 s de um giro
-//      de ombro vira 10 °/s, abaixo da zona morta do servo: a garra trava.
-//      O comando DEMO confere isso na tabela antes de começar e recusa.
-//
-//   2. Recolher antes de girar a base. Girar esticado é onde o ombro está no
-//      maior torque, e é onde a fonte afunda.
-//
-// Os ângulos abaixo são PONTO DE PARTIDA, dentro dos limites conhecidos.
-// Ajuste olhando o braço (o pegada_manual.py --passo é mais rápido para
-// isso, porque não precisa recompilar a cada número).
+// Ao editar: recolha antes de girar a base, que é onde o ombro está no maior
+// torque. Ajustar pelo pegada_manual.py --passo é mais rápido, porque não
+// precisa recompilar a cada número.
 const int16_t demo_passos[][NUM_SERVOS] PROGMEM = {
   // base  ombro  cotovelo  garra
   {   -1,   130,     140,     -1 },   //  1 recolhe
@@ -300,16 +240,14 @@ unsigned long t_ultimo_passo = 0;
 // Instalado em série com o fio vermelho (V+) do servomotor da garra, então vê
 // só a corrente dela. Alimentado pelo 5 V do Nano e lido em A0.
 //
-// Alimentar pelo mesmo trilho que serve de referência ao ADC não é detalhe:
-// o ACS712 é ratiométrico (zero em VCC/2, sensibilidade proporcional a VCC),
-// e o ADC do Nano usa VCC como referência. Com os dois no mesmo trilho, a
-// tensão de alimentação se cancela na conta e a leitura pode ser feita
-// direto em contagens de ADC, sem nunca precisar saber quanto vale o VCC.
+// Alimentar pelo 5 V do Nano não é detalhe: o ACS712 é ratiométrico e o ADC
+// usa VCC como referência, então no mesmo trilho a alimentação se cancela na
+// conta. Alimentado pela fonte de potência, a leitura carregaria justamente
+// a flutuação que o sensor existe para medir.
 //
 //   corrente_A = (adc_medio - adc_zero) / (mV_por_A * 1023 / 5000)
 //
-// O zero NÃO é 511,5: cada peça tem offset de fabricação. É medido no boot,
-// com a garra parada, e pode ser refeito com ZERO.
+// O zero não é 511,5 — cada peça tem offset. Medido no boot, refaz com ZERO.
 
 const uint8_t PINO_ACS = A0;      // A4 e A5 são o I2C do PCA9685
 uint8_t canal_medido = 3;         // garra
@@ -423,26 +361,16 @@ float limitaAcoplado(uint8_t id, float angulo, bool *apertou) {
 // ---------------------------------------------------------------------------
 // Suavização do movimento
 // ---------------------------------------------------------------------------
-// O problema que isto resolve são os trancos.
+// Interpolação linear resolve o meio do movimento e não as pontas: a
+// velocidade salta de zero para o valor cheio e volta a zero de repente, e
+// aceleração instantânea é o tranco.
 //
-// Mandar o ângulo final de uma vez faz o servo sair na velocidade máxima dele
-// e bater no fim do curso: tranco na partida e na chegada. Interpolar em
-// linha reta (um for com delay, ou um passo fixo por ciclo) melhora o meio do
-// caminho mas NÃO resolve as pontas — a velocidade ainda salta de zero para o
-// valor cheio e volta a zero de repente. Aceleração instantânea é o tranco.
+// suaviza() é a smootherstep, 6p^5 - 15p^4 + 10p^3. Primeira E segunda
+// derivadas nulas em p=0 e p=1, então nem velocidade nem aceleração dão
+// salto, inclusive no retorno e na inversão do sweep.
 //
-// A saída é interpolar a POSIÇÃO por uma curva cuja derivada é zero nas duas
-// pontas. Assim o servo parte do repouso e chega ao repouso, sem degrau de
-// velocidade em lugar nenhum.
-//
-// suaviza() é a smootherstep: 6p^5 - 15p^4 + 10p^3. Sua primeira E segunda
-// derivadas são zero em p=0 e p=1, então nem a velocidade nem a aceleração
-// dão salto. É por isso que ela some com o tranco também no retorno e no fim
-// do sweep, que é onde a interpolação linear ainda trancava.
-//
-// Custo: para uma mesma duração, o pico de velocidade fica ~1,9x a média.
-// `velocidade` (SPEED) é a MÉDIA — "SPEED 60" significa que um movimento de
-// 60° leva 1 segundo, não que o servo nunca passa de 60°/s.
+// Custo: o pico fica ~1,9x a média. SPEED é a MÉDIA — "SPEED 60" quer dizer
+// que 60° levam 1 segundo, não que o servo nunca passa de 60 °/s.
 
 float suaviza(float p) {
   if (p <= 0.0) return 0.0;
@@ -472,7 +400,7 @@ void defineAlvo(uint8_t id, float angulo) {
   //
   // Deixá-la no lote era um defeito com sintoma enganoso. Ao colar várias
   // linhas no monitor serial, tudo cai no mesmo lote e a garra herda a
-  // duração do movimento mais longo: um fechamento de 40° esticado para os
+  // duração do movimento mais longo: um fechamento de 17° esticado para os
   // 4 s de um giro de ombro vira 10 °/s, abaixo da zona morta do servo. A
   // garra treme, não fecha, e parece que o comando não chegou.
   //
@@ -712,26 +640,16 @@ void atualizaMovimento() {
 
         // Corta a cauda da curva.
         //
-        // A smootherstep chega ao alvo com velocidade ZERO, de propósito: é
-        // o que tira o tranco da chegada. O efeito colateral é que os
-        // últimos graus são percorridos em passos cada vez menores, e abaixo
-        // de meia contagem de pulso esses passos deixam de virar movimento.
-        // O que se vê então não é suavidade: são ticks isolados de 0,46
-        // grau, cada vez mais espaçados, o braço "acertando aos poucos".
+        // A smootherstep chega ao alvo com velocidade zero, então os últimos
+        // graus caem abaixo de meia contagem de pulso e viram ticks isolados
+        // de 0,46° cada vez mais espaçados — o braço "acertando aos poucos".
+        // Grudar no alvo chega no mesmo destino sem a cauda, porque o que
+        // falta é menor que a resolução do hardware.
         //
-        // Grudar no alvo aqui chega no MESMO destino — a diferença restante
-        // é menor que a resolução do hardware —, só que sem a cauda.
-        //
-        // NÃO zera duracao[i]. A primeira versão zerava, e isso quebrava a
-        // sincronização de lote: cada junta atinge a meia contagem num
-        // instante diferente, conforme a distância que percorre, então as
-        // três chegavam desencontradas (medido: 920, 940 e 820 ms num lote
-        // que deveria ser simultâneo) e o SWEEP invertia com a junta ainda
-        // em movimento. O movimento continua "ocupado" até o fim da duração
-        // combinada; só não se mexe mais, que é o que se queria.
-        //
-        // Reaplicar a cada passo é seguro porque a smootherstep é monótona:
-        // uma vez dentro da meia contagem, não sai mais.
+        // NÃO zera duracao[i]: cada junta atinge a meia contagem num instante
+        // diferente, e zerar aqui desmonta a sincronia do lote. O movimento
+        // segue "ocupado" até o fim da duração combinada, só não se mexe
+        // mais. Reaplicar a cada passo é seguro porque a curva é monótona.
         if (fabs(alvo[i] - posicao) < grausPorContagem(i) * 0.5) {
           posicao = alvo[i];
         }
@@ -875,17 +793,10 @@ uint8_t divideEmTokens(char *texto, char *tok[], uint8_t maximo) {
 // ---------------------------------------------------------------------------
 // Interpretação dos comandos
 // ---------------------------------------------------------------------------
-// Os argumentos são convertidos com atoi() e atof(), e NÃO com sscanf().
-//
-// O motivo é uma armadilha do avr-libc: a biblioteca padrão do Arduino linka
-// uma versão reduzida do scanf que não implementa ponto flutuante. Um
-// sscanf(texto, "SET %d %f", ...) compila sem aviso, roda, e simplesmente
-// falha em converter o segundo argumento, devolvendo 1 em vez de 2. O comando
-// então cai no final da cadeia e responde ERR UNKNOWN, como se a linha tivesse
-// sido digitada errada. É a mesma razão pela qual sprintf("%f") não funciona
-// no Arduino e existe o dtostrf.
-//
-// atof() faz parte do avr-libc e funciona normalmente.
+// atoi() e atof(), NUNCA sscanf(): o avr-libc linka um scanf sem ponto
+// flutuante. sscanf("SET %d %f") compila sem aviso, roda, devolve 1 em vez
+// de 2, e todo comando com decimal responde ERR UNKNOWN como se a linha
+// estivesse errada. Mesma razão de sprintf("%f") não funcionar aqui.
 
 void processaComando(char *texto) {
   for (char *p = texto; *p; p++) *p = toupper(*p);
@@ -1167,18 +1078,13 @@ void setup() {
   pwm.setPWMFreq(PWM_FREQ);
   delay(10);
 
-  // Zero do sensor de corrente, medido ANTES de energizar qualquer servo.
+  // Zero do sensor, medido com as saídas em "full off" — sem corrente alguma
+  // passando pelo sensor. Medir depois de energizar deixava o zero uns 5
+  // contagens alto, ou 130 mA de viés constante: não atrapalha a detecção de
+  // travamento, mas estraga o AMP como medida.
   //
-  // A primeira versão media depois do salto para a pose de repouso, com 600 ms
-  // de espera. Não bastava: na bancada o zero saía uns 5 contagens alto, e
-  // todas as leituras posteriores vinham negativas, em torno de -0,13 A. Com
-  // 26 mA por contagem do ADC, isso é 130 mA de viés constante — pouco para
-  // estragar a detecção de travamento, que é coisa de centenas de mA, mas
-  // suficiente para o AMP não servir como medida.
-  //
-  // Com as saídas em "full off" não há corrente alguma passando pelo sensor,
-  // e o zero sai limpo. O preço é que o braço fica solto por ~550 ms antes de
-  // assumir a pose de repouso: ligue com ele já perto dela.
+  // O preço é o braço ficar solto por ~550 ms antes de assumir a pose de
+  // repouso. Ligue com ele já perto dela.
   for (uint8_t i = 0; i < NUM_SERVOS; i++) desligaSaida(i);
   delay(50);
   medeZero();
@@ -1187,12 +1093,10 @@ void setup() {
   // no boot não se sabe onde as juntas estão, e ramper a partir de um palpite
   // errado seria um movimento não comandado logo ao ligar.
   //
-  // O limitaAoIntervalo aqui NÃO é zelo: escrevePulso() só satura a contagem
-  // em 0-4095, não conhece lim_min/lim_max. Quem protege as juntas é o
-  // defineAlvo, e o boot não passa por ele. Sem esta linha, uma pose_repouso
-  // fora dos limites é escrita crua, em velocidade máxima, contra o batente,
-  // TODA VEZ que a alimentação é ligada — que é o jeito mais eficiente de
-  // descascar uma engrenagem sem ninguém perceber de onde veio.
+  // O limitaAoIntervalo aqui não é zelo: escrevePulso() só satura a contagem
+  // em 0-4095 e quem conhece lim_min/lim_max é o defineAlvo, por onde o boot
+  // não passa. Sem ele, uma pose_repouso fora dos limites vai crua contra o
+  // batente, em velocidade máxima, a cada energização.
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     float inicial = limitaAoIntervalo(i, pose_repouso[i]);
     if (fabs(inicial - pose_repouso[i]) > 0.05) {
