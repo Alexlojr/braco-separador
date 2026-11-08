@@ -12,3 +12,9 @@ config/homografia.json
 
 # Prévia da calibração: regerada a cada execução do calibrar_camera.py
 config/previa_calibracao.png
+
+# Imagens de diagnóstico da calibração: regeradas a cada tentativa
+config/falha_deteccao*.png
+
+# Imagens de diagnóstico da calibração: regeradas a cada tentativa
+config/falha_deteccao*.png

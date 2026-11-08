@@ -34,6 +34,8 @@ citado como erro residual em qualquer relato do sistema.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 
@@ -102,6 +104,29 @@ def detectar_quadrilateros(frame, area_minima_frac=0.02, max_resultados=10):
             if len(achados) >= max_resultados:
                 break
     return achados
+
+
+def diagnostico(frame, destino) -> str:
+    """
+    Salva o que a câmera viu e o que o detector enxergou dela.
+
+    Falha de detecção sem imagem é adivinhação: não dá para saber se o
+    problema é enquadramento, contraste, foco ou luz. As duas imagens
+    respondem isso de olho — a de bordas mostra exatamente onde o algoritmo
+    acha que existe aresta, e se a placa não aparecer lá, não há o que
+    ajustar em parâmetro.
+    """
+    destino = Path(destino)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(destino), frame)
+
+    cinza = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
+    cinza = cv2.GaussianBlur(cinza, (5, 5), 0)
+    mediana = float(np.median(cinza))
+    bordas = cv2.Canny(cinza, int(max(0, 0.66 * mediana)), int(min(255, 1.33 * mediana)))
+    bordas = cv2.dilate(bordas, np.ones((3, 3), np.uint8), iterations=1)
+    cv2.imwrite(str(destino.with_name(destino.stem + "_bordas.png")), bordas)
+    return str(destino)
 
 
 def detectar_area(frame, area_minima_frac=0.02):

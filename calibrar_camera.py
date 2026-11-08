@@ -45,6 +45,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from src.vision.area_coleta import (  # noqa: E402
     AreaNaoEncontrada,
+    diagnostico,
     avaliar_com_pontos,
     cantos_em_mm,
     desenhar_previa,
@@ -55,6 +56,7 @@ from src.vision.homografia import Homografia  # noqa: E402
 
 SAIDA = BASE_DIR / "config" / "homografia.json"
 PREVIA = BASE_DIR / "config" / "previa_calibracao.png"
+DIAGNOSTICO = BASE_DIR / "config" / "falha_deteccao.png"
 
 
 def capturar_frame():
@@ -219,7 +221,15 @@ def main():
             cantos = detectar_area(frame)
         except AreaNaoEncontrada as e:
             print(f"\nNão achei a área de coleta: {e}")
-            print("Use --clique para marcar os cantos na mão.")
+            caminho = Path(diagnostico(frame, DIAGNOSTICO))
+            print("\nSalvei o que a câmera viu:")
+            print(f"  {caminho}")
+            print(f"  {caminho.with_name(caminho.stem + '_bordas.png')}"
+                  "   (o que o detector enxerga como aresta)")
+            print("\nSe a placa não aparecer desenhada na imagem de bordas, o")
+            print("problema é contraste, e nenhum ajuste de parâmetro resolve:")
+            print("ponha algo escuro sob a área de coleta.")
+            print("\nPara seguir agora, sem esperar: --clique")
             return 1
         pixels = [(float(u), float(v)) for u, v in cantos]
         milimetros = cantos_em_mm(args.largura, args.altura, args.x0, args.y0, args.rotacao)
