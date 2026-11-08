@@ -2,6 +2,18 @@
 # sistema (apt install python3-picamera2) e são enxergados pelo venv porque
 # o setup.sh cria o venv com --system-site-packages.
 streamlit==1.57.0
+# O Streamlit não fixa o Starlette, e o 1.8.0 (13/10/2026) mudou o
+# IdentityResponder.send_with_compression. O middleware de gzip do Streamlit
+# sobrescreve esse método e engole o http.response.start, então TODA resposta
+# binária quebra — no painel isso aparece como a imagem da câmera não
+# carregando, com o terminal repetindo "Expected ASGI message
+# 'http.response.start', but got 'http.response.body'".
+#
+# Fixado abaixo de 1.8 porque é a correção determinística. A alternativa é
+# subir o Streamlit para 1.62+, que já convive com o Starlette 1.8 — mas
+# trocar de versão do framework a essa altura do projeto traz mais risco do
+# que resolve.
+starlette==1.7.0
 opencv-python==4.13.0.92
 ultralytics==8.4.50
 pyserial==3.5
