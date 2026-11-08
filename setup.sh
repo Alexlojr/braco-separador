@@ -125,12 +125,24 @@ fi
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 PORTA=8501
 
-echo "==> Subindo o dashboard Streamlit (modo headless)..."
+# O painel NAO sobe sozinho. Ele abre a camera, e so um processo por vez
+# consegue: subir aqui fazia um "./setup.sh" deixar um Streamlit vivo em
+# segundo plano, e qualquer coisa que tentasse a camera depois falhava com
+# "Pipeline handler in use by another process", sem pista de quem era o dono.
+#
+# Setup instala; quem decide o que roda e voce.
+echo ""
+echo "==> Pronto. Ative o ambiente com:"
+echo "      source venv/bin/activate"
+echo ""
+echo "    Painel de monitoramento:"
+echo "      ./painel.sh"
 if [ -n "$IP" ]; then
-    echo "==> Acesse de outro dispositivo na mesma rede: http://${IP}:${PORTA}"
+    echo "      (de outro aparelho na rede: http://${IP}:${PORTA})"
 fi
-
-exec streamlit run app.py \
-    --server.headless true \
-    --server.address 0.0.0.0 \
-    --server.port "$PORTA"
+echo ""
+echo "    Coleta:"
+echo "      python coletar.py --dry-run"
+echo ""
+echo "    Os dois juntos funcionam: a coleta publica os quadros e o painel"
+echo "    le deles. Comece a coleta primeiro."

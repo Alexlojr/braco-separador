@@ -21,6 +21,7 @@ from picamera2 import Picamera2
 from ultralytics import YOLO
 
 from src.vision.fonte import aplicar_rotacao
+from src.vision.quadro_publicado import ler as ler_publicado
 from src.vision.deteccao import (
     CLASSES_PERMITIDAS,
     CONFIANCA_MINIMA,
@@ -44,6 +45,13 @@ def carregar_modelo():
 
 @st.cache_resource
 def iniciar_camera():
+    """
+    Abre a camera. So e chamada quando NAO ha coleta publicando quadros.
+
+    Um processo por vez consegue a camera. Se o coletar.py estiver rodando,
+    ele e o dono e o painel le a publicacao dele; abrir aqui so produziria
+    "Pipeline handler in use by another process".
+    """
     picam2 = Picamera2()
     picam2.configure(
         picam2.create_preview_configuration(
@@ -56,7 +64,7 @@ def iniciar_camera():
 
 
 model = carregar_modelo()
-picam2 = iniciar_camera()
+picam2 = None   # aberta sob demanda, se nao houver coleta publicando
 
 if "rodando" not in st.session_state:
     st.session_state.rodando = False
@@ -83,6 +91,24 @@ frame_count = 0
 ultima_detec = None
 
 while st.session_state.rodando:
+    # Preferencia pelo quadro publicado pela coleta: ela ja fez a inferencia,
+    # e repetir aqui seria pagar o YOLO duas vezes no mesmo Pi.
+    publicado = ler_publicado()
+    if publicado is not None:
+        frame, meta = publicado
+        camera_placeholder.image(para_rgb(frame), channels="RGB",
+                                 caption="recebendo do coletar.py")
+        rotulo = meta.get("rotulo")
+        status_placeholder.markdown(
+            f"**Coleta em andamento** — {meta.get('coletados', 0)} peça(s)  \n"
+            f"{('vendo: ' + rotulo) if rotulo else 'nenhum objeto no campo'}"
+        )
+        time.sleep(0.2)
+        continue
+
+    if picam2 is None:
+        picam2 = iniciar_camera()
+
     frame = aplicar_rotacao(picam2.capture_array())
     frame_count += 1
 

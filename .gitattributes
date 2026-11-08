@@ -1,0 +1,9 @@
+# Scripts de shell SEMPRE com LF, mesmo commitados do Windows.
+# Com CRLF o Linux trata o \r como parte do argumento: o shebang vira um
+# interpretador inexistente e variaveis carregam um \r invisivel no fim.
+*.sh text eol=lf
+
+# O firmware e lido pelo tests/test_firmware.py, que casa texto exato.
+*.ino text eol=lf
+*.py text eol=lf
+*.json text eol=lf

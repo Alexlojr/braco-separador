@@ -50,9 +50,11 @@ from src.vision.estabilidade import (  # noqa: E402
 from src.vision.deteccao import (  # noqa: E402
     CLASSES_PERMITIDAS,
     CONFIANCA_MINIMA,
+    desenhar,
     melhor_deteccao,
 )
 from src.vision.fonte import aplicar_rotacao  # noqa: E402
+from src.vision.quadro_publicado import limpar, publicar  # noqa: E402
 from src.vision.homografia import CalibracaoInvalida, Homografia  # noqa: E402
 
 CAMINHO_CONFIG = BASE_DIR / "config" / "braco.json"
@@ -212,6 +214,15 @@ def main() -> int:
             resultado = modelo(frame, classes=CLASSES_PERMITIDAS, verbose=False)[0]
             deteccao = melhor_deteccao(resultado, modelo.names, args.confianca)
 
+            # Publica o quadro para o painel. Quem roda a coleta e dono da
+            # camera; o app.py le daqui em vez de tentar abrir a dele, que
+            # falharia com "Pipeline handler in use by another process".
+            publicar(
+                desenhar(frame, deteccao) if deteccao else frame,
+                {"rotulo": deteccao.rotulo if deteccao else None,
+                 "coletados": coletados},
+            )
+
             if deteccao is None:
                 portao.perdeu_deteccao()
                 continue
@@ -260,6 +271,9 @@ def main() -> int:
 
     finally:
         fechar_camera()
+        # Apaga a publicação: imagem antiga parada no painel parece ao vivo,
+        # que é pior do que painel sem imagem.
+        limpar()
         if hasattr(serial, "close"):
             serial.close()
 
