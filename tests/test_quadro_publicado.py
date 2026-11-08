@@ -55,6 +55,17 @@ if lido is not None:
 checa(qp.ler(idade_maxima_s=-1.0) is None,
       "publicacao fora da idade maxima deveria ser recusada")
 
+# Carimbo no FUTURO tambem nao vale. O Pi nao tem relogio de bateria: comeca
+# numa data velha e salta quando o NTP sincroniza. Sem este teste, um quadro
+# carimbado depois do salto ficaria "fresco" para sempre.
+import json as _json
+_img, _est = qp._caminhos()
+qp.publicar(quadro, {"n": 1})
+_m = _json.loads(_est.read_text(encoding="utf-8"))
+_m["t"] = _m["t"] + 3600
+_est.write_text(_json.dumps(_m), encoding="utf-8")
+checa(qp.ler() is None, "publicacao com carimbo no futuro deveria ser recusada")
+
 # --- 4. escrita atomica ----------------------------------------------------
 # Sem os.replace o leitor pega JPEG pela metade de vez em quando, e o
 # sintoma e uma imagem corrompida intermitente, dificil de ligar a causa.

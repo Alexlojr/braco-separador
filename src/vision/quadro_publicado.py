@@ -86,7 +86,13 @@ def ler(idade_maxima_s: float = 3.0):
     img, est = _caminhos()
     try:
         meta = json.loads(est.read_text(encoding="utf-8"))
-        if time.time() - float(meta.get("t", 0)) > idade_maxima_s:
+        idade = time.time() - float(meta.get("t", 0))
+        # Idade negativa é publicação com carimbo no futuro, e acontece de
+        # verdade: o Pi não tem relógio de bateria, começa numa data velha e
+        # salta quando o NTP sincroniza. Sem este teste, um quadro carimbado
+        # depois do salto ficaria "fresco" para sempre e o painel mostraria
+        # uma imagem congelada como se fosse ao vivo.
+        if idade < 0 or idade > idade_maxima_s:
             return None
         frame = cv2.imread(str(img))
         if frame is None:
