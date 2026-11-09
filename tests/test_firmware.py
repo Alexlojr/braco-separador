@@ -730,6 +730,57 @@ def testa_limites_sincronizados():
     ]
 
 
+def testa_acoplamento_sincronizado():
+    """
+    A reta do limite acoplado esta em DOIS lugares, e os dois tem de concordar.
+
+    No firmware (ACOP_A / ACOP_B / ACOP_MARGEM) ela satura o comando; no
+    kinematics.py ela RECUSA a pose, para o planejador tentar o outro ramo da
+    IK. Se divergirem, o Python planeja uma pose que o firmware vai saturar em
+    silencio: o braco para num angulo que ninguem pediu, no meio de uma
+    sequencia, possivelmente com a peca na garra.
+
+    E o mesmo modo de falha dos limites de junta, que ja apareceu duas vezes
+    neste projeto - por isso vira falha, e nao aviso.
+    """
+    fonte = INO.read_text(encoding="utf-8")
+
+    sys.path.insert(0, str(RAIZ))
+    from src.arm.kinematics import CalibracaoBraco
+
+    falhas = []
+    for nome in ("ACOP_A", "ACOP_B", "ACOP_MARGEM"):
+        achado = re.search(rf"const\s+float\s+{nome}\s*=\s*(-?[\d.]+)\s*;", fonte)
+        if achado is None:
+            falhas.append(f"{nome} nao encontrado no .ino")
+            continue
+        do_ino = float(achado.group(1))
+        do_py = float(getattr(CalibracaoBraco, nome))
+        if abs(do_ino - do_py) > 1e-9:
+            falhas.append(f"{nome}: .ino {do_ino} x kinematics.py {do_py}")
+
+    # A pose de repouso tambem e copiada: o pegada_manual.py tem um passo
+    # "Volta ao repouso" que deve bater com o pose_repouso compilado, senao
+    # o roteiro manual e o HOME terminam em lugares diferentes.
+    repouso = _extrai_vetor(fonte, "pose_repouso")
+    try:
+        import pegada_manual
+        passo = next((ang for desc, ang in pegada_manual.SEQUENCIA
+                      if "repouso" in desc.lower()), None)
+    except Exception:
+        passo = None
+
+    if passo:
+        for canal, angulo in passo.items():
+            if canal < len(repouso) and abs(float(angulo) - repouso[canal]) > 1e-9:
+                falhas.append(
+                    f"pose de repouso, canal {canal}: .ino {repouso[canal]:.0f} x "
+                    f"pegada_manual.py {float(angulo):.0f}"
+                )
+
+    return falhas
+
+
 def main():
     falhas = 0
 
@@ -755,6 +806,12 @@ def main():
     if not falhas_limites:
         print("limites de junta iguais nos tres arquivos")
 
+    falhas_acop = testa_acoplamento_sincronizado()
+    for f in falhas_acop:
+        print(f"  FALHA acoplamento: {f}")
+    if not falhas_acop:
+        print("limite acoplado e pose de repouso iguais no .ino e no Python")
+
     falhas_sensor = testa_sensor()
     for f in falhas_sensor:
         print(f"  FALHA sensor: {f}")
@@ -763,7 +820,7 @@ def main():
           f"{'passaram' if not falhas_mov else f'-> {len(falhas_mov)} falha(s)'}")
 
     total = (falhas + len(falhas_mov) + len(falhas_sensor)
-             + len(falhas_demo) + len(falhas_limites))
+             + len(falhas_demo) + len(falhas_limites) + len(falhas_acop))
     print("\nOK" if total == 0 else f"\n{total} falha(s)")
     return 1 if total else 0
 
