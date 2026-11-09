@@ -74,10 +74,14 @@ class ParametrosColeta:
     # erro ficou 7,0 mm da borda e 13,3 mm do centro, e praticamente TODO
     # em Y — 0,5 mm em X. Viés radial, como o modelo previa.
     #
-    # Fica em 0 porque o valor certo depende da peça, e a peça do projeto
-    # ainda não foi medida: para um haltere de 50 mm o deslocamento seria da
-    # ordem de 25 mm, dez vezes o erro da homografia. Meça com a peça real e
-    # ponha em `deslocamento_radial_mm` no braco.json.
+    # A peça do projeto tem prato de 50 mm, que é a pegada dela na mesa, e o
+    # centro fica meio prato mais longe no raio: 25 mm, no braco.json. Dez
+    # vezes o erro da homografia e mais que a folga de 20 mm que a garra tem
+    # de cada lado — sem corrigir, a pega erraria sempre para o mesmo lado.
+    #
+    # O padrão aqui continua 0 porque este valor é propriedade do OBJETO, não
+    # do braço: um default diferente de zero deslocaria em silêncio qualquer
+    # alvo de outro tamanho.
     deslocamento_radial: float = 0.0
     # (x, y) do depósito, em mm. Precisa cair dentro dos limites da base:
     # um ponto "atrás" do braço (y negativo com x≈0) exige base ≈ -90°, que

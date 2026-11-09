@@ -18,7 +18,8 @@ Este arquivo é para ser lido no Pi, durante o trabalho.
 | garra | abre em 105 (90 mm), fecha em 140 | limites da junta 100–140 |
 | repouso | base **50**, ombro 120, cotovelo 120, garra 105 — garra a (72, 86), 59 mm de altura |
 | limite acoplado | `s2 ≥ 285 − 1,5·s1 + 15`, validado em 5 poses |
-| faixa útil da área de coleta | **121 a 188 mm** do eixo da base |
+| faixa útil da área de coleta | **121 a 188 mm** do eixo da base, medidos no CENTRO da peça |
+| correção radial | 25 mm — a visão entrega a borda do prato, não o centro |
 
 Medido em 09/11/2026 com a sequência de entrada lateral montada. Só a pose
 de pega iria de 92 a 194 mm; o que sobe o limite interno para 121 é o ponto de
@@ -244,6 +245,24 @@ capítulo de resultados.
 ---
 
 ## O que ainda está em aberto
+
+**O ângulo de FECHAMENTO não foi casado com o tronco.** A peça tem tronco de
+20 mm, e `garra_fechada_graus` está em 140, que é o fim de curso. Se em 140 a
+abertura for menor que 20 mm, a garra encosta no tronco antes de chegar lá e o
+servo passa o resto do movimento empurrando contra a peça — aquece e puxa
+corrente sem ganhar aperto nenhum, porque a retenção aqui é por encaixe.
+
+Meça a abertura em alguns ângulos e ache onde ela dá ~20 mm:
+
+```
+SET 3 125
+SET 3 130
+SET 3 135
+```
+
+O `garra_fechada_graus` deve ser esse ângulo mais uns poucos graus, não o 140.
+É a mesma lógica do 105 na abertura: fim de curso é reserva, não posição de
+trabalho.
 
 **A abertura da garra — RESOLVIDO em 08/11/2026.** Em `SET 3 100` as pinças
 ficam retas, com ~100 mm de ponta a ponta. A peça tem extremidades de 50 mm,

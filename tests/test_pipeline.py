@@ -404,8 +404,11 @@ checa(abs((r_corr - r_bruto) - 12.0) < 0.01,
 checa(abs(_math.atan2(*bruto[::-1]) - _math.atan2(*corrigido[::-1])) < 1e-9,
       "a correcao nao pode mudar o angulo da base: ela e radial")
 
-# com deslocamento 0 (o padrao) nada muda, nem por arredondamento
-c_zero = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**base_params))
+# com deslocamento 0 nada muda, nem por arredondamento. O zero e EXPLICITO:
+# base_params vem do braco.json de verdade, onde o valor e 25 mm desde que a
+# peca foi medida, e herdar dali faria este teste nao testar nada.
+p_zero = dict(base_params, deslocamento_radial=0.0)
+c_zero = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_zero))
 checa(c_zero.ponto_de_pega(*bruto) == bruto,
       "sem deslocamento configurado o ponto tem que passar intacto")
 
