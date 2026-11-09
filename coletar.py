@@ -48,7 +48,6 @@ from src.vision.estabilidade import (  # noqa: E402
     PortaoEstabilidade,
 )
 from src.vision.deteccao import (  # noqa: E402
-    CLASSES_PERMITIDAS,
     CONFIANCA_MINIMA,
     desenhar,
     melhor_bruta,
@@ -127,6 +126,16 @@ def main() -> int:
                          "Abaixar aceita detecções mais fracas; o objeto "
                          "parado na mesa costuma pontuar menos que o mesmo "
                          "objeto na mão")
+    # Uma classe, nao a lista inteira. O CLASSES_PERMITIDAS existe para o
+    # painel, onde ver uma pessoa no quadro e informacao util. Na coleta ele
+    # e defeito: `melhor_deteccao` devolve a caixa de MAIOR confianca entre as
+    # permitidas, e a mao que ajusta a peca pontua como "person" acima do
+    # proprio celular. A caixa muda de objeto no meio da janela, as posicoes
+    # viram de outro lugar, e no fim da sequencia o braco iria buscar a mao.
+    ap.add_argument("--classe", type=int, default=67,
+                    help="classe COCO a coletar (padrão %(default)s = celular). "
+                         "Só ela entra na janela de estabilidade; o painel "
+                         "continua mostrando todas")
     ap.add_argument("--imgsz", type=int, default=640,
                     help="resolução de entrada do YOLO (padrão %(default)s). "
                          "O custo é quadrático: 320 roda ~4x mais rápido que "
@@ -207,8 +216,11 @@ def main() -> int:
     modelo = YOLO(str(CAMINHO_MODELO))
     capturar, fechar_camera = abrir_camera()
 
+    print(f"Coletando a classe {args.classe} "
+          f"({modelo.names[args.classe]}), confiança >= {args.confianca:.2f}.")
     print(f"Portão: {params_est.janela} detecções dentro de "
-          f"{params_est.tolerancia_mm:.1f} mm. Ctrl-C para sair.\n")
+          f"{params_est.tolerancia_mm:.1f} mm, com no máximo "
+          f"{params_est.intervalo_maximo_s:.1f} s entre elas. Ctrl-C para sair.\n")
 
     ultima_coleta = 0.0
     coletados = 0
@@ -228,7 +240,7 @@ def main() -> int:
             if time.monotonic() - ultima_coleta < PAUSA_APOS_COLETA_S:
                 continue
 
-            resultado = modelo(frame, classes=CLASSES_PERMITIDAS,
+            resultado = modelo(frame, classes=[args.classe],
                                imgsz=args.imgsz, conf=0.10, verbose=False)[0]
 
             # O `conf` da chamada fica BAIXO de propósito: o limiar que decide

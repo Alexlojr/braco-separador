@@ -243,6 +243,17 @@ na borda da área de coleta, ou perto da parede do depósito, o dedo chega lá
 antes da peça. Se isso aparecer, a saída é fechar um pouco o `garra_aberta_graus`:
 a peça precisa de 50 mm, então há 40 mm para gastar.
 
+**O portão de estabilidade foi medido no Pi, em 09/11/2026.** A taxa de
+inferência ficou em ~3 FPS a imgsz 640, com 27% dos intervalos passando de
+1 s. Daí o `intervalo_maximo_s = 2.5` no `braco.json`: em 1,0 s um quarto dos
+quadros zerava a janela. Se você mudar o `--imgsz`, vale reconferir — o
+`coletar.py` imprime a taxa e avisa se ela sozinha impedir o portão de fechar.
+
+**A coleta olha uma classe só** (`--classe`, padrão 67 = celular). O
+`CLASSES_PERMITIDAS` com pessoa junto é para o painel. Na coleta, a mão que
+ajusta a peça pontua como `person` acima do próprio objeto, a caixa troca de
+objeto no meio da janela, e no fim o braço iria buscar a mão.
+
 **O modelo ainda usa classes COCO.** O `coletar.py` detecta com os pesos base
 do YOLOv8n. Treinar nos objetos do projeto é a etapa seguinte, e não bloqueia
 a calibração da homografia.

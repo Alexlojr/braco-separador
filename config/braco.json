@@ -111,9 +111,18 @@
       "mesma observacao. Nao e a idade da amostra: medido por idade, a",
       "janela exigiria janela/tempo deteccoes por segundo (5 em 1 s = 4",
       "FPS), e abaixo disso o portao nunca fechava nem com o objeto",
-      "imovel. Era o caso no Pi 5, com o YOLOv8n a ~3 FPS."
+      "imovel. Era o caso no Pi 5, com o YOLOv8n a ~3 FPS.",
+      "",
+      "2,5 s e medido, nao escolhido: num log de 51 inferencias do Pi 5,",
+      "a taxa ficou em ~3 FPS mas 27% dos intervalos passaram de 1,0 s.",
+      "Com o limite em 1,0 s esse quarto dos quadros zerava a janela.",
+      "",
+      "Folgar aqui nao deixa a pega imprecisa: quem garante que as",
+      "amostras descrevem o MESMO objeto parado e a tolerancia_mm. Duas",
+      "posicoes diferentes dao dispersao alta e o portao recusa de todo",
+      "jeito - este parametro so decide quando desistir de esperar."
     ],
-    "intervalo_maximo_s": 1.0
+    "intervalo_maximo_s": 2.5
   },
   "coleta": {
     "_alturas": [
