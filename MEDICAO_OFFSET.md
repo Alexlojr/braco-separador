@@ -1,31 +1,41 @@
 # O que medir no braço
 
-Estado em 05/11/2026.
+Estado em 09/11/2026. **Roteiro concluído**, `"calibrado": true`.
 
-## ESTE ROTEIRO JÁ FOI PERCORRIDO
+## RESULTADO
 
-Sobrou uma conferência de dez segundos. O resto está em `config/braco.json`.
+| junta | referência | sentido | limites |
+|---|---|---|---|
+| base | 0 | +1 | 0–180 |
+| ombro | 200 | −1 | 90–180 |
+| cotovelo | **180** | **+1** | 70–160 |
+| garra | 0 | +1 | 100–140 (abre em 105, fecha em 140) |
 
-| parte | estado |
-|---|---|
-| 0 — sentido e comprimentos | resolvido, CAD |
-| 2 — ombro | **resolvido**, referência 200° |
-| 3 — antebraço | descartada: as leituras não passaram na autoconferência |
-| 4 — base | **resolvido**, referência 0° |
-| 5 — limite acoplado | **medido**, virou a reta `s2 ≥ 285 − 1,5·s1` |
+Limite acoplado: `s2 ≥ 285 − 1,5·s1`, com 15° de margem aplicados no código.
+Medido em cinco poses, validado numa sexta com 2,5° de erro.
 
-O cotovelo não saiu da parte 3: saiu da parte 5, por dedução geométrica a
-partir da pose em que a garra encosta na superfície. Referência **46°**.
+### O cotovelo custou duas hipóteses erradas
 
-**O que falta:** `SET 2 136` deve deixar o antebraço na vertical apontando
-para baixo. Se deixar, a referência 46 está certa e dá para marcar
-`"calibrado": true`. Se ficar inclinado, o erro em graus soma direto no 46.
+A primeira foi **46°**, deduzida da pose em que a garra encosta na superfície,
+assumindo que encostar significa altura zero. A leitura vertical em `SET 2 90`
+derrubou isso.
 
-Opcional, para confirmar a reta de colisão com um terceiro ponto: em
-`SET 1 115` a reta prevê colisão em `SET 2 112`.
+A segunda foi **offset 0, sentido −1**, e veio de uma pergunta mal feita: "para
+que lado o braço foi no `SET 2 120`?". Direção é fácil de ler errado quando o
+servo gira para um lado e move o elo para o outro, que é o caso de um
+paralelogramo.
 
-O texto abaixo é o roteiro original, mantido porque explica o porquê de cada
-medida e porque a parte 3 pode precisar ser refeita se a conferência falhar.
+O que resolveu foi trocar o tipo de pergunta. Em vez de observar um sentido,
+montar um ensaio em que as duas hipóteses previam a garra em pontos **150 mm
+distantes** um do outro, e medir com régua qual aconteceu. Previsão 173/91 mm,
+medido 170/90 → **offset 180, sentido +1**.
+
+A lição vale para qualquer calibração daqui para frente: prefira o ensaio cujas
+duas respostas possíveis diferem por uma distância grande e mensurável, em vez
+do que depende de interpretar uma direção.
+
+O texto abaixo é o roteiro original. Está mantido porque explica o porquê de
+cada medida, e porque serve de modelo se alguma junta precisar ser remedida.
 
 ---
 
