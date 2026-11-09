@@ -124,13 +124,19 @@ python calibrar_camera.py --largura 300 --altura 200 --x0 -150 --y0 60 --conferi
 ### 4a. ABRA A PRÉVIA
 
 O script salva `config/previa_calibracao.png` com os quatro cantos marcados e
-a coordenada de cada um escrita ao lado.
+a coordenada de cada um escrita ao lado. Vale nos três modos — automático,
+`--clique` e, quando houver imagem, no manual.
 
-**Confira que o canto marcado como perto da base é mesmo o perto da base.**
+**Confira que o canto marcado como perto da base é mesmo o perto da base**, e
+que os sinais de X batem com o que você vê.
 
-Se a correspondência estiver girada, rode de novo com `--rotacao 1` (ou 2, ou
-3). Isso **não aparece em número nenhum**: com 4 pontos a matriz fica exata de
-qualquer jeito, e o erro só se manifesta no braço indo para o lugar errado.
+No automático, correspondência girada se corrige com `--rotacao 1` (ou 2, ou
+3). No `--clique`, basta clicar um canto e digitar os milímetros de outro.
+
+Nos dois casos isso **não aparece em número nenhum**: com 4 pontos a matriz
+fica exata de qualquer jeito, e o erro só se manifesta no braço indo para o
+lugar errado. Nem os pontos de conferência pegam, se tiverem sido medidos com
+a mesma troca na cabeça.
 
 ### 4b. O residual dos 4 cantos não vale nada
 

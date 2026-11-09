@@ -313,17 +313,29 @@ def main():
         print(f"\nFalha ao calcular a homografia: {e}")
         return 1
 
-    if automatico and frame is not None:
+    # A prévia vale em QUALQUER modo que tenha imagem, e não só no automático.
+    # Ela é a única verificação que pega correspondência trocada, e trocar
+    # acontece nos dois modos: no automático o detector pode casar os cantos
+    # girados; no --clique basta clicar o canto perto-esquerda e digitar os
+    # milímetros do perto-direita. Nos dois casos a matriz sai EXATA — 4
+    # pontos para 8 incógnitas — e o erro só aparece com o braço indo para o
+    # lugar errado. Até os pontos de conferência passam, se forem medidos com
+    # a mesma troca na cabeça.
+    if frame is not None:
         import cv2
 
         PREVIA.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(PREVIA), desenhar_previa(frame, pixels, milimetros))
         print(f"\nPrévia salva em: {PREVIA}")
-        print("  ABRA ESSA IMAGEM antes de confiar na calibração. Confira que o")
-        print("  canto marcado como estando perto da base é mesmo o perto da base.")
-        print("  Se a correspondência estiver girada, rode de novo com --rotacao 1")
-        print("  (ou 2, ou 3). Uma rotação errada NÃO aparece em número nenhum:")
-        print("  a matriz fica exata do mesmo jeito e o braço vai para o lugar errado.")
+        print("  ABRA ESSA IMAGEM antes de confiar na calibração. Cada canto")
+        print("  está marcado com os milímetros que foram atribuídos a ele.")
+        print("  Confira que o canto marcado como perto da base é mesmo o")
+        print("  perto da base, e que os sinais de X batem com o que você vê.")
+        if automatico:
+            print("  Se a correspondência estiver girada, rode de novo com")
+            print("  --rotacao 1 (ou 2, ou 3).")
+        print("  Correspondência trocada NÃO aparece em número nenhum: a matriz")
+        print("  fica exata do mesmo jeito e o braço vai para o lugar errado.")
 
     erro = h.meta["erro_residual_mm"]
     print(f"\nResidual nos próprios pontos de calibração: {erro} mm")
