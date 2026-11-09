@@ -223,14 +223,23 @@ dos pontos, e o que ficou de fora já estava de fora pelo alcance.
 
 Antes de ligar a alimentação:
 
-- o braço tem que estar **perto da pose de repouso**. No boot ele fica solto
-  por ~550 ms e depois assume a pose de uma vez, sem suavizar;
-- mão no `STOP`;
-- `SPEED 40` para a primeira rodada.
+- o braço tem que estar **perto da pose de repouso** (base 50, ombro 120,
+  cotovelo 120, garra 105). No boot ele fica solto por ~550 ms e depois
+  assume a pose de uma vez, sem suavizar;
+- mão no interruptor da fonte.
 
 ```bash
-python coletar.py
+python coletar.py --velocidade 40
 ```
+
+O `--velocidade` manda `SPEED` assim que conecta. Sem ele vale a velocidade
+compilada, 90 °/s, que é rápida demais para a primeira rodada. Não dá para
+mandar `SPEED` pelo monitor serial com a coleta rodando: ela é a dona da
+porta.
+
+Depois que a sequência estiver confiável, tirar o `--velocidade` volta aos
+90 °/s — e a diferença de tempo de ciclo entre 40 e 90 é medição boa para o
+capítulo de resultados.
 
 ---
 

@@ -123,6 +123,12 @@ def main() -> int:
                     help="mostra os comandos sem abrir a serial")
     ap.add_argument("--forcar", action="store_true",
                     help="roda mesmo com a config marcada como não calibrada")
+    ap.add_argument("--velocidade", type=float, default=None,
+                    help="graus por segundo, enviado por SPEED ao conectar. "
+                         "Sem isto vale a velocidade compilada no firmware "
+                         "(90 °/s). Use 40 na primeira coleta de verdade; "
+                         "abaixo de ~23 o movimento entra na zona morta do "
+                         "servo e vira solavanco")
     ap.add_argument("--confianca", type=float, default=None,
                     help="limiar de confiança do YOLO. Padrão: o "
                          "visao.confianca_minima do braco.json. "
@@ -145,6 +151,16 @@ def main() -> int:
                          "O custo é quadrático: 320 roda ~4x mais rápido que "
                          "640, com menos acerto em objeto pequeno no quadro")
     args = ap.parse_args()
+
+    # O firmware recusa fora de (0, 150] e responde ERR, que daqui chegaria
+    # como um timeout mudo. Conferir aqui dá a mensagem certa, e antes de
+    # abrir a serial.
+    if args.velocidade is not None and not (0 < args.velocidade <= 150):
+        print(f"ERRO: --velocidade {args.velocidade:.0f} fora da faixa aceita "
+              "pelo firmware, que vai de 1 a 150 graus por segundo.")
+        print("      O teto de 150 é de MÉDIA: a curva suavizada tem pico de")
+        print("      1,875x, então 150 vira 281 °/s no meio do movimento.")
+        return 1
 
     # A config manda; a linha de comando sobrepõe. Assim trocar o objeto no
     # braco.json troca para a coleta E para o painel de uma vez, e o
@@ -212,6 +228,19 @@ def main() -> int:
             # em dois lugares e dessincronizam calados: alguém recalibra e
             # corrige o JSON, esquece de recompilar o sketch, e o firmware
             # segue permitindo um ângulo que já se sabe que bate.
+            # A velocidade é do firmware, e o padrão compilado é 90 °/s. Para
+            # a primeira coleta de verdade isso é rápido demais para alguém
+            # conseguir reagir com a mão no interruptor, e o roteiro de
+            # montagem manda usar 40. Mandar pela serial era impossível com o
+            # coletar.py rodando, porque ele é o dono da porta — a única saída
+            # era fechar tudo, abrir o monitor, mandar SPEED e começar de novo.
+            if args.velocidade is not None:
+                if serial.definir_velocidade(args.velocidade):
+                    print(f"Velocidade ajustada para {args.velocidade:.0f} °/s.")
+                else:
+                    print(f"AVISO: o firmware não aceitou SPEED {args.velocidade:.0f}. "
+                          "Ele segue na velocidade compilada.")
+
             aceitas = serial.enviar_limites(calib)
             if aceitas == 4:
                 print("Limites de junta enviados ao firmware.")

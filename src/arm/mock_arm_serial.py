@@ -286,6 +286,21 @@ class MockArmSerial:
                 aceitas += 1
         return aceitas
 
+    def definir_velocidade(self, graus_por_s: float) -> bool:
+        """
+        Manda SPEED. True se o firmware confirmou.
+
+        Existe porque o dono da porta serial é este processo: com o
+        coletar.py rodando não dá para abrir um monitor e mandar SPEED na
+        mão, e a velocidade compilada é alta demais para a primeira coleta
+        de verdade, quando se quer poder reagir ao que o braço faz.
+        """
+        if self._serial_real is None:
+            return False
+        # O prefixo leva o espaço: "OK SPEEDG" também começa com "OK SPEED",
+        # e uma resposta atrasada de SPEEDG seria lida como confirmação desta.
+        return self._pergunta(f"SPEED {graus_por_s:.1f}", "OK SPEED ") is not None
+
     def read_all(self) -> bytes:
         linhas = list(self._rx)
         self._rx.clear()
