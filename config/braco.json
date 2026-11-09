@@ -106,7 +106,14 @@
     "janela": 5,
     "tolerancia_mm": 3.0,
     "timeout_s": 8.0,
-    "validade_amostra_s": 1.0
+    "_intervalo_maximo_s": [
+      "Intervalo maximo ENTRE duas deteccoes para elas contarem como da",
+      "mesma observacao. Nao e a idade da amostra: medido por idade, a",
+      "janela exigiria janela/tempo deteccoes por segundo (5 em 1 s = 4",
+      "FPS), e abaixo disso o portao nunca fechava nem com o objeto",
+      "imovel. Era o caso no Pi 5, com o YOLOv8n a ~3 FPS."
+    ],
+    "intervalo_maximo_s": 1.0
   },
   "coleta": {
     "_alturas": [

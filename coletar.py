@@ -51,6 +51,7 @@ from src.vision.deteccao import (  # noqa: E402
     CLASSES_PERMITIDAS,
     CONFIANCA_MINIMA,
     desenhar,
+    melhor_bruta,
     melhor_deteccao,
 )
 from src.vision.fonte import aplicar_rotacao  # noqa: E402
@@ -121,7 +122,15 @@ def main() -> int:
                     help="mostra os comandos sem abrir a serial")
     ap.add_argument("--forcar", action="store_true",
                     help="roda mesmo com a config marcada como não calibrada")
-    ap.add_argument("--confianca", type=float, default=CONFIANCA_MINIMA)
+    ap.add_argument("--confianca", type=float, default=CONFIANCA_MINIMA,
+                    help="limiar de confiança do YOLO (padrão %(default)s). "
+                         "Abaixar aceita detecções mais fracas; o objeto "
+                         "parado na mesa costuma pontuar menos que o mesmo "
+                         "objeto na mão")
+    ap.add_argument("--imgsz", type=int, default=640,
+                    help="resolução de entrada do YOLO (padrão %(default)s). "
+                         "O custo é quadrático: 320 roda ~4x mais rápido que "
+                         "640, com menos acerto em objeto pequeno no quadro")
     args = ap.parse_args()
 
     # ---- configuração ------------------------------------------------
@@ -204,6 +213,14 @@ def main() -> int:
     ultima_coleta = 0.0
     coletados = 0
 
+    # Contadores de diagnóstico. A pergunta "por que não coleta?" tem três
+    # respostas possíveis — não vê, vê fraco, ou vê e não assenta — e sem
+    # medir as três ficam todas parecidas com "não funciona".
+    t_inicio_taxa = time.monotonic()
+    inferencias = 0
+    taxa_relatada = False
+    t_ultimo_aviso = 0.0
+
     try:
         while True:
             frame = capturar()
@@ -211,8 +228,31 @@ def main() -> int:
             if time.monotonic() - ultima_coleta < PAUSA_APOS_COLETA_S:
                 continue
 
-            resultado = modelo(frame, classes=CLASSES_PERMITIDAS, verbose=False)[0]
+            resultado = modelo(frame, classes=CLASSES_PERMITIDAS,
+                               imgsz=args.imgsz, conf=0.10, verbose=False)[0]
+
+            # O `conf` da chamada fica BAIXO de propósito: o limiar que decide
+            # é o `args.confianca`, aplicado abaixo. Deixar o modelo devolver
+            # as caixas fracas é o que permite dizer "vi com 0,38" em vez de
+            # "não vi nada", que pedem providências opostas.
+            bruta = melhor_bruta(resultado, modelo.names)
             deteccao = melhor_deteccao(resultado, modelo.names, args.confianca)
+
+            inferencias += 1
+            decorrido = time.monotonic() - t_inicio_taxa
+            if not taxa_relatada and inferencias >= 10:
+                taxa = inferencias / decorrido
+                espera = (params_est.janela - 1) / taxa
+                print(f"Taxa de inferência: {taxa:.1f}/s a imgsz {args.imgsz}. "
+                      f"Nessa taxa o portão precisa de ~{espera:.1f} s de objeto "
+                      f"parado.")
+                if 1.0 / taxa > params_est.intervalo_maximo_s:
+                    print(f"AVISO: o intervalo entre inferências ({1/taxa:.2f} s) "
+                          f"passa do intervalo_maximo_s ({params_est.intervalo_maximo_s:.2f} s): "
+                          f"cada detecção zera a janela e o portão nunca fecha. "
+                          f"Suba o intervalo_maximo_s no braco.json ou baixe o --imgsz.")
+                print()
+                taxa_relatada = True
 
             # Publica o quadro para o painel. Quem roda a coleta e dono da
             # camera; o app.py le daqui em vez de tentar abrir a dele, que
@@ -225,6 +265,19 @@ def main() -> int:
 
             if deteccao is None:
                 portao.perdeu_deteccao()
+                # Uma linha a cada 2 s, não a cada frame: a informação é o
+                # estado, e repetir a 3 FPS só empurra o resto para fora da
+                # tela.
+                agora = time.monotonic()
+                if agora - t_ultimo_aviso >= 2.0:
+                    t_ultimo_aviso = agora
+                    if bruta is None:
+                        print("  nada das classes permitidas no quadro")
+                    else:
+                        print(f"  {bruta.nome} com {bruta.confianca:.2f}, abaixo "
+                              f"do limiar de {args.confianca:.2f} — "
+                              f"--confianca {max(0.1, bruta.confianca - 0.05):.2f} "
+                              f"aceitaria")
                 continue
 
             leitura = portao.observar(*deteccao.caixa)

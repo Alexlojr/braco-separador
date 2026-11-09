@@ -20,6 +20,11 @@ from dataclasses import dataclass
 # Classes COCO, provisórias até o modelo ser treinado nos objetos do projeto.
 # 0 = pessoa, 67 = celular. Servem para exercitar o pipeline inteiro antes de
 # existir dataset próprio.
+#
+# Isto NÃO alivia o processamento. O `classes=` do Ultralytics filtra DEPOIS
+# da inferência: a rede roda inteira de qualquer jeito, com as 80 saídas, e o
+# filtro só descarta caixas no fim. O que muda o custo é a resolução de
+# entrada (`imgsz`), que é quadrática — 320 custa um quarto de 640.
 CLASSES_PERMITIDAS = [0, 67]
 CONFIANCA_MINIMA = 0.5
 
@@ -48,12 +53,13 @@ class Deteccao:
         return f"{self.nome} {self.confianca:.2f}"
 
 
-def melhor_deteccao(resultado, nomes, confianca_minima: float = CONFIANCA_MINIMA):
+def melhor_bruta(resultado, nomes):
     """
-    A detecção de maior confiança acima do limiar, ou None.
+    A detecção de maior confiança, SEM aplicar limiar. None se não houver.
 
-    `resultado` é um item do que o Ultralytics devolve (results[0]); `nomes`
-    é o `model.names`.
+    Existe para o diagnóstico: "o modelo não viu nada" e "o modelo viu com
+    0,38 de confiança e o limiar é 0,50" pedem providências opostas, e as
+    duas chegavam como `melhor_deteccao() is None`.
     """
     melhor = None
     maior = 0.0
@@ -64,12 +70,25 @@ def melhor_deteccao(resultado, nomes, confianca_minima: float = CONFIANCA_MINIMA
             maior = conf
             melhor = caixa
 
-    if melhor is None or maior < confianca_minima:
+    if melhor is None:
         return None
 
     x1, y1, x2, y2 = (float(v) for v in melhor.xyxy[0])
     classe = int(melhor.cls[0])
     return Deteccao(x1, y1, x2, y2, classe, maior, nomes[classe])
+
+
+def melhor_deteccao(resultado, nomes, confianca_minima: float = CONFIANCA_MINIMA):
+    """
+    A detecção de maior confiança acima do limiar, ou None.
+
+    `resultado` é um item do que o Ultralytics devolve (results[0]); `nomes`
+    é o `model.names`.
+    """
+    d = melhor_bruta(resultado, nomes)
+    if d is None or d.confianca < confianca_minima:
+        return None
+    return d
 
 
 def desenhar(frame, deteccao: Deteccao, cor=(0, 255, 0)):

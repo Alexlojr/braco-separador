@@ -54,7 +54,7 @@ def novo(janela=5, tolerancia=3.0, timeout=8.0, validade=1.0):
     portao = PortaoEstabilidade(
         HomografiaFalsa(),
         ParametrosEstabilidade(janela=janela, tolerancia_mm=tolerancia,
-                               timeout_s=timeout, validade_amostra_s=validade),
+                               timeout_s=timeout, intervalo_maximo_s=validade),
         relogio=relogio,
     )
     return portao, relogio
@@ -106,7 +106,7 @@ checa(abs(leitura.x_mm - 100.0) < 0.01,
       f"a mediana deveria ignorar o outlier, veio x={leitura.x_mm}")
 
 
-# --- amostras velhas caem sozinhas ---------------------------------------
+# --- buraco entre deteccoes zera a janela --------------------------------
 portao, relogio = novo(validade=1.0)
 for _ in range(4):
     portao.observar(*caixa_em(100.0, 80.0))
@@ -115,6 +115,41 @@ relogio.avanca(5.0)                          # objeto sumiu por 5 s
 leitura = portao.observar(*caixa_em(100.0, 80.0))
 checa(not leitura.estavel, "amostras de antes da pausa nao deveriam contar")
 checa(leitura.amostras == 1, f"deveria ter sobrado 1 amostra, tem {leitura.amostras}")
+
+
+# --- inferencia LENTA tem que fechar a janela do mesmo jeito --------------
+#
+# Este e o teste que faltava, e a falta dele escondia um defeito que so
+# aparecia no hardware: a janela era descartada pela IDADE da amostra, nao
+# pelo intervalo entre amostras. Por idade, fechar as `janela` amostras
+# exigia janela/intervalo_maximo_s deteccoes por segundo - 4 FPS com os
+# padroes - e abaixo disso o portao NUNCA fechava, com o objeto imovel e
+# dispersao zero: a amostra mais velha expirava antes de a quinta chegar e o
+# contador ficava preso em 4/5. Todos os testes daqui usavam 0,16 s por
+# amostra (6 FPS) e passavam.
+#
+# O YOLOv8n no Pi 5 faz ~3 FPS. A taxa de inferencia nao pode decidir se o
+# portao fecha; ela decide so quanto tempo ele leva.
+for periodo in (0.16, 0.30, 0.50, 1.0):
+    portao, relogio = novo()
+    estavel = False
+    for _ in range(12):
+        leitura = portao.observar(*caixa_em(100.0, 80.0))
+        if leitura.estavel:
+            estavel = True
+            break
+        relogio.avanca(periodo)
+    checa(estavel, f"objeto parado deveria estabilizar a {1/periodo:.1f} FPS "
+                   f"(periodo {periodo:.2f}s), chegou a {leitura.amostras}/5")
+
+# ja um intervalo MAIOR que o limite e objeto que sumiu, e tem que zerar
+portao, relogio = novo(validade=1.0)
+for _ in range(10):
+    leitura = portao.observar(*caixa_em(100.0, 80.0))
+    checa(not leitura.estavel,
+          "deteccoes espacadas mais que o intervalo maximo nao deveriam "
+          "formar janela")
+    relogio.avanca(1.5)
 
 
 # --- timeout desiste em vez de travar ------------------------------------

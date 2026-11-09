@@ -17,6 +17,11 @@ liberar quando todas couberem dentro de uma tolerância. Se couberem, o objeto
 está parado E a mediana delas é uma coordenada melhor que qualquer uma
 sozinha.
 
+A janela é descartada por INTERVALO entre detecções, não pela idade das
+amostras. Por idade, fechar a janela exigiria `janela / tempo` detecções por
+segundo, e uma inferência lenta impediria o portão de fechar para sempre, com
+o objeto parado — ver `ParametrosEstabilidade.intervalo_maximo_s`.
+
 A tolerância é medida em MILÍMETROS, não em pixels, porque a grandeza que
 importa é física — "o objeto se mexeu menos do que a folga da garra". O mesmo
 número de pixels significa distâncias diferentes conforme a posição na mesa,
@@ -61,9 +66,22 @@ class ParametrosEstabilidade:
     # isto, um objeto que treme perto do limite prende o portão para sempre.
     timeout_s: float = 8.0
 
-    # Uma detecção velha não conta para a janela: se o objeto sumiu por um
-    # tempo e voltou, as posições de antes não dizem nada sobre agora.
-    validade_amostra_s: float = 1.0
+    # Intervalo máximo entre duas detecções seguidas para elas contarem como
+    # da mesma observação. Passou disso, o objeto sumiu de cena e voltou, e as
+    # posições de antes não dizem nada sobre agora: a janela zera.
+    #
+    # É um INTERVALO ENTRE AMOSTRAS, não a idade da amostra. A diferença não é
+    # cosmética. Com idade absoluta, a janela só fecha se as `janela` amostras
+    # couberem todas dentro deste tempo — ou seja, exige
+    # `janela / intervalo_maximo_s` detecções por segundo. Com janela 5 e 1 s
+    # isso dá 4 FPS, e abaixo disso o portão NUNCA fecha, mesmo com o objeto
+    # imóvel e dispersão zero: a amostra mais velha expira antes de a quinta
+    # chegar, e o contador fica preso em 4/5 para sempre. Foi o que aconteceu
+    # no Pi 5 com o YOLOv8n a ~3 FPS.
+    #
+    # Medido por intervalo, a taxa de inferência deixa de importar: o portão
+    # fica mais lento, como tem de ser, mas continua fechando.
+    intervalo_maximo_s: float = 1.0
 
     @classmethod
     def de_json(cls, caminho="config/braco.json") -> "ParametrosEstabilidade":
@@ -80,7 +98,13 @@ class ParametrosEstabilidade:
             janela=int(secao.get("janela", cls.janela)),
             tolerancia_mm=float(secao.get("tolerancia_mm", cls.tolerancia_mm)),
             timeout_s=float(secao.get("timeout_s", cls.timeout_s)),
-            validade_amostra_s=float(secao.get("validade_amostra_s", cls.validade_amostra_s)),
+            # "validade_amostra_s" era o nome antigo, de quando a regra era por
+            # idade da amostra. Aceito aqui para um config antigo não mudar de
+            # comportamento em silêncio.
+            intervalo_maximo_s=float(
+                secao.get("intervalo_maximo_s",
+                          secao.get("validade_amostra_s", cls.intervalo_maximo_s))
+            ),
         )
 
 
@@ -112,6 +136,7 @@ class PortaoEstabilidade:
         self._relogio = relogio
         self._amostras: deque = deque(maxlen=self.params.janela)
         self._t_primeira: float | None = None
+        self._t_ultima: float | None = None
 
     # ---- ciclo de vida --------------------------------------------------
 
@@ -123,14 +148,18 @@ class PortaoEstabilidade:
         """
         self._amostras.clear()
         self._t_primeira = None
+        self._t_ultima = None
 
     def perdeu_deteccao(self) -> None:
         """
         Um frame sem detecção. Não zera a janela na hora: o YOLO pisca, e
-        perder uma inferência no meio de um objeto parado é comum. As amostras
-        velhas caem sozinhas por `validade_amostra_s`.
+        perder uma inferência no meio de um objeto parado é comum.
+
+        Quem zera é a própria `observar`, quando o intervalo desde a última
+        detecção passa de `intervalo_maximo_s` — aí o objeto sumiu de verdade.
+        Não há nada a fazer aqui além de não estragar a janela.
         """
-        self._descartar_velhas()
+        return
 
     # ---- observação -----------------------------------------------------
 
@@ -145,8 +174,14 @@ class PortaoEstabilidade:
         agora = self._relogio()
         x_mm, y_mm = self.homografia.caixa_para_mm(x1, y1, x2, y2)
 
-        self._descartar_velhas()
+        # Buraco grande desde a última detecção: o objeto saiu de cena e
+        # voltou (ou é outro). O que havia na janela não descreve mais a cena.
+        if (self._t_ultima is not None
+                and agora - self._t_ultima > self.params.intervalo_maximo_s):
+            self.rearmar()
+
         self._amostras.append((agora, x_mm, y_mm))
+        self._t_ultima = agora
 
         if self._t_primeira is None:
             self._t_primeira = agora
@@ -183,13 +218,6 @@ class PortaoEstabilidade:
         )
 
     # ---- interno --------------------------------------------------------
-
-    def _descartar_velhas(self) -> None:
-        limite = self._relogio() - self.params.validade_amostra_s
-        while self._amostras and self._amostras[0][0] < limite:
-            self._amostras.popleft()
-        if not self._amostras:
-            self._t_primeira = None
 
     def _dispersao(self) -> float:
         """
