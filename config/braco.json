@@ -163,7 +163,15 @@
       "fora de alcance e continua observando, que e o comportamento certo.",
       "",
       "Espessura: todas as bases tem a mesma, entao o topo da area de coleta",
-      "e o mesmo plano do topo da placa do braco, e z=0 vale para os dois."
+      "e o mesmo plano do topo da placa do braco, e z=0 vale para os dois.",
+      "",
+      "09/11/2026, medido com a sequencia de entrada lateral montada: a",
+      "SEQUENCIA COMPLETA so fecha entre 121,2 e 188,2 mm do eixo. So a pose",
+      "de pega iria de 92 a 194; o que sobe o limite interno de 92 para 121 e",
+      "o ponto de descida ao lado, que fica 25 mm mais perto do eixo e cai no",
+      "trecho onde o braco nao dobra o bastante.",
+      "",
+      "A borda de tras da placa esta a 130 mm, com 9 mm de folga do limite."
     ],
     "_entrada_lateral": [
       "08/11/2026. A peca tem um chapeu de 50 mm sobre um tronco de 20 mm.",

@@ -18,10 +18,14 @@ Este arquivo é para ser lido no Pi, durante o trabalho.
 | garra | abre em 105 (90 mm), fecha em 140 | limites da junta 100–140 |
 | repouso | base 90, ombro 120, cotovelo 120, garra 105 |
 | limite acoplado | `s2 ≥ 285 − 1,5·s1 + 15`, validado em 5 poses |
-| faixa útil da área de coleta | **115 a 190 mm** do eixo da base |
+| faixa útil da área de coleta | **121 a 188 mm** do eixo da base |
 
-Os 115–190 mm são a interseção entre conseguir pegar a 25 mm de altura e
-conseguir sobrevoar a 70 mm. Fora dessa faixa, uma das duas falha.
+Medido em 09/11/2026 com a sequência de entrada lateral montada. Só a pose
+de pega iria de 92 a 194 mm; o que sobe o limite interno para 121 é o ponto de
+**descida ao lado**, 25 mm mais perto do eixo, que cai no trecho onde o braço
+não dobra o suficiente.
+
+A borda de trás da placa está a 130 mm, com 9 mm de folga.
 
 ---
 

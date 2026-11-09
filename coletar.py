@@ -296,6 +296,18 @@ def main() -> int:
 
             if not leitura.estavel:
                 print(f"  {deteccao.rotulo} — {leitura.motivo}")
+                # Primeira amostra da janela: confere alcance já, mesmo com a
+                # coordenada ainda crua. Esperar o portão fechar para só então
+                # recusar gasta ~1,5 s de objeto parado e não diz nada que não
+                # desse para saber antes — e o que o operador precisa ouvir é
+                # "arraste a peça", não "falhou".
+                if leitura.amostras == 1:
+                    x_cru, y_cru = homografia.caixa_para_mm(*deteccao.caixa)
+                    pode, _ = controlador.alcancavel(x_cru, y_cru)
+                    if not pode:
+                        print(f"    AVISO: ({x_cru:.0f}, {y_cru:.0f}) mm não é "
+                              f"coletável. A sequência completa só fecha entre "
+                              f"~121 e ~188 mm do eixo.")
                 continue
 
             x_mm, y_mm = leitura.x_mm, leitura.y_mm
