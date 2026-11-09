@@ -171,10 +171,25 @@ def main() -> int:
         print(f"ERRO: {e}")
         return 1
 
-    residual = homografia.meta.get("erro_residual_mm")
-    if residual is not None and residual > 5.0:
-        print(f"AVISO: a calibração da câmera tem erro residual de {residual:.1f} mm.")
-        print("       Acima de ~5 mm costuma ser ponto mal medido. Considere refazer.")
+    # O número que vale é o dos pontos de CONFERÊNCIA, que não entraram no
+    # cálculo da matriz. O "erro_residual_mm" é o residual sobre os próprios
+    # pontos de calibração e, com exatamente 4, ele é ~0 por construção — 8
+    # incógnitas para 8 equações. Avisar com base nele é uma validação que
+    # parece validar e não valida: fica calada numa calibração girada ou com
+    # um canto clicado errado, que são os dois jeitos de errar isto.
+    conferencia = homografia.meta.get("erro_conferencia_mm")
+    if conferencia is None:
+        print("AVISO: esta calibração nunca foi verificada contra pontos")
+        print("       independentes. O residual dos próprios cantos é ~0 por")
+        print("       construção e não prova nada. Rode:")
+        print("         python calibrar_camera.py --conferir ...")
+    elif conferencia.get("maximo", 0.0) > 5.0:
+        print(f"AVISO: a calibração erra até {conferencia['maximo']:.1f} mm nos")
+        print(f"       pontos de conferência (médio {conferencia['medio']:.1f} mm),")
+        print("       acima do critério de 5 mm. Considere refazer.")
+    else:
+        print(f"Calibração da câmera: erro de {conferencia['medio']:.1f} mm médio, "
+              f"{conferencia['maximo']:.1f} mm máximo.")
 
     params_est = ParametrosEstabilidade.de_json(CAMINHO_CONFIG)
 

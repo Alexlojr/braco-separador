@@ -13,6 +13,14 @@ tarde:
 Uso:
     python mapa_alcance.py
     python mapa_alcance.py --z 15 --passo 10
+    python mapa_alcance.py --sequencia
+
+O modo `--sequencia` é o que vale para posicionar a área de coleta. Sem ele o
+mapa mostra onde a GARRA chega no plano pedido, que é mais do que o braço
+consegue coletar: a sequência de pega entra de lado, e o ponto de descida fica
+25 mm mais perto do eixo, num trecho onde o braço não dobra o suficiente. A
+diferença não é pequena — 92 a 194 mm só da pose de pega, contra 121 a 188 mm
+da sequência inteira.
 """
 
 import argparse
@@ -22,6 +30,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
+from src.arm.coleta import ControladorColeta, ParametrosColeta  # noqa: E402
 from src.arm.kinematics import (  # noqa: E402
     PoseInalcancavel,
     carregar_config,
@@ -48,12 +57,31 @@ def classificar(braco, calib, x, y, z):
     return SIMBOLO[classificar_alvo(braco, calib, x, y, z)]
 
 
+def classificar_sequencia(controlador, x, y):
+    """
+    Mesmo mapa, mas exigindo que a SEQUÊNCIA INTEIRA de coleta feche.
+
+    Inclui o sobrevoo, a descida ao lado, a entrada, a subida com o objeto e
+    o transporte até o depósito. Um ponto que a garra alcança mas de onde a
+    peça não sai não serve para nada, e é o que o mapa simples mostraria.
+    """
+    try:
+        controlador.planejar(float(x), float(y))
+        return OK
+    except PoseInalcancavel as e:
+        return SIMBOLO.get(e.motivo, FORA_LIM)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Mapa de alcance do braço")
     ap.add_argument("--z", type=float, default=None,
                     help="altura do plano a testar, em mm (padrão: z_pega do config)")
     ap.add_argument("--passo", type=float, default=20.0, help="resolução da grade, em mm")
     ap.add_argument("--config", default=str(BASE_DIR / "config" / "braco.json"))
+    ap.add_argument("--sequencia", action="store_true",
+                    help="exige que a sequência de coleta inteira feche, não "
+                         "só a pose de pega. É o mapa que vale para decidir "
+                         "onde colar a área de coleta")
     args = ap.parse_args()
 
     braco, calib, params, calibrado = carregar_config(args.config)
@@ -64,7 +92,15 @@ def main():
     print("=" * 66)
     print(f"elos: L1={braco.l1:.0f}  L2={braco.l2:.0f}  L3={braco.l3:.0f} mm"
           f"   offset radial: {braco.offset_radial:.0f} mm")
-    print(f"plano testado: z = {z:.0f} mm   |   grade de {args.passo:.0f} mm")
+    controlador = (ControladorColeta(None, braco=braco, calib=calib,
+                                     params=ParametrosColeta(**params))
+                   if args.sequencia else None)
+
+    if args.sequencia:
+        print("modo SEQUÊNCIA: o ponto só conta se a coleta inteira planejar")
+        print("               (sobrevoo, descida ao lado, entrada, transporte)")
+    else:
+        print(f"plano testado: z = {z:.0f} mm   |   grade de {args.passo:.0f} mm")
     if not calibrado:
         print('\nAVISO: config marcada como "calibrado": false.')
         print("O mapa abaixo reflete os placeholders, não o braço real.")
@@ -101,7 +137,8 @@ def main():
             if abs(x - dep_x) < passo / 2 and abs(y - dep_y) < passo / 2:
                 celulas.append(DEPOSITO)
                 continue
-            c = classificar(braco, calib, x, y, z)
+            c = (classificar_sequencia(controlador, x, y) if controlador
+                 else classificar(braco, calib, x, y, z))
             total += 1
             if c == OK:
                 alcancaveis += 1

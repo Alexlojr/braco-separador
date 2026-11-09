@@ -15,7 +15,8 @@ coletar.py                    pipeline de coleta ponta a ponta (headless)
 calibrar_camera.py            gera config/homografia.json a partir de 4 pontos
 mapa_alcance.py               desenha em ASCII o que o braço alcança
 pegada_manual.py              pega e solta em ângulo de servo, sem calibração
-setup.sh                      setup do Raspberry Pi
+setup.sh                      instala dependências no Raspberry Pi
+painel.sh                     sobe o Streamlit, separado do setup
 MEDICAO_OFFSET.md             roteiro de medição de offset/sentido na bancada
 PROXIMO_PASSO_CAMERA.md       passo a passo da calibração da câmera, no Pi
 
@@ -41,6 +42,7 @@ src/
     deteccao.py               escolhe e desenha a detecção do YOLO
     homografia.py             pixel -> mm
     estabilidade.py           decide quando a coordenada pode ser usada
+    quadro_publicado.py       passa o frame da coleta para o painel
   camera.py                   visualizador standalone, sem Streamlit
 
 tests/
@@ -49,6 +51,7 @@ tests/
   test_estabilidade.py        portão de estabilidade
   test_kinematics_acoplamento.py  paralelogramo: ângulo absoluto vs relativo
   test_pipeline.py            corrente visão -> braço, sem câmera
+  test_quadro_publicado.py    publicação de frame entre processos
 ```
 
 Rodar os testes (nenhum precisa de hardware):
@@ -310,8 +313,25 @@ etapa mais demorada, e detecção perfeita não adianta se o braço não alcanç
 ## A dashboard
 
 Só visão: câmera ao vivo com as bounding boxes desenhadas e contagem dos
-objetos que passam. Ainda usa classes COCO (0 = pessoa, 67 = celular) até o
-modelo ser treinado nos objetos do projeto.
+objetos que passam.
+
+**O que procurar vem da seção `visao` do `braco.json`**, o mesmo arquivo que o
+`coletar.py` lê:
+
+```json
+"visao": { "classe_alvo": "mouse", "confianca_minima": 0.5 }
+```
+
+Um lugar só, de propósito. Antes a classe estava na linha de comando da coleta
+e numa lista fixa no `app.py`, e trocar o objeto de teste num deles deixava o
+outro procurando outra coisa: a detecção era descartada antes de qualquer
+desenho, o painel não mostrava caixa nenhuma, e nada na tela dizia por quê.
+A barra lateral agora mostra a classe e o limiar em uso.
+
+**Quando o `coletar.py` está rodando, o painel mostra o quadro publicado por
+ele**, já com a caixa desenhada, e não roda YOLO próprio. Um processo por vez
+consegue a câmera no Pi, e pagar a inferência duas vezes na mesma máquina não
+traria nada.
 
 **A dashboard não move o braço.** Isso é deliberado: enquanto a maquete não
 está montada e a homografia não está calibrada, acionar servo por interface
@@ -354,6 +374,28 @@ parâmetros ficam na seção `estabilidade` do `braco.json`.
 A tolerância é medida em milímetros e não em pixels de propósito: a grandeza
 que importa é física — "o objeto se mexeu menos que a folga da garra" — e o
 mesmo número de pixels vale distâncias diferentes conforme a posição na mesa.
+
+**A sequência de pega não é top-down.** A peça do projeto é um haltere: um
+chapéu de 50 mm sobre um tronco de 20 mm. Descer no tronco é descer no chapéu,
+então a garra recua no raio, desce ao lado e entra de fora para dentro:
+
+```
+abre -> sobrevoa 30 mm antes do alvo -> desce ao lado, 5 mm abaixo da pega ->
+entra no tronco subindo -> fecha -> sobe -> leva -> solta -> HOME
+```
+
+O recuo é **radial**, mesmo ângulo de base. Com a base parada na etapa de
+entrada, a garra avança exatamente na direção em que os dedos abrem; um recuo
+lateral a faria chegar de través e bater na peça com a face externa dos dedos.
+
+O trecho final sobe. Errar para baixo empurra a peça contra a mesa ou a tomba;
+errar para cima só fecha a garra um pouco acima do meio do tronco.
+
+Isso **encurta a área útil**: a sequência completa só fecha entre 121 e 188 mm
+do eixo, contra 92 a 194 mm da pose de pega sozinha. Quem sobe o limite
+interno é o ponto de descida, 25 mm mais perto do eixo, que cai no trecho onde
+o braço não dobra o suficiente. A borda de trás da área de coleta está a
+130 mm, com 9 mm de folga.
 
 **`python coletar.py --dry-run`** mostra os comandos sem abrir a serial. É o
 passo 5 do roteiro. O script se recusa a rodar sem `"calibrado": true` e sem
@@ -399,6 +441,19 @@ objeto preso na garra.
 objeto encosta na mesa, que é o plano da calibração. Usar o centro erra cada
 vez mais conforme o objeto é mais alto.
 
+**O portão descarta por intervalo entre detecções, não por idade da
+amostra.** A diferença parece cosmética e não é: por idade, fechar a janela
+exige `janela / tempo` detecções por segundo — 5 em 1 s dá 4 FPS — e abaixo
+disso o portão **nunca** fecha, com o objeto imóvel e dispersão zero, porque a
+amostra mais velha expira antes de a última chegar. O YOLOv8n no Pi 5 faz 2,6
+a 3 FPS, e o contador ficava preso em 4/5. Medido por intervalo, a taxa de
+inferência decide quanto tempo o portão leva, não se ele fecha.
+
+**Uma classe por vez na coleta, não uma lista.** A mão que ajusta a peça
+pontua como `person` acima do próprio objeto, e `melhor_deteccao` devolve a
+caixa de maior confiança: a caixa troca de objeto no meio da janela e a
+sequência terminaria mandando o braço buscar a mão.
+
 **Detecção estática, não rastreamento.** O objeto está parado quando é
 detectado, então 5–8 FPS do YOLOv8n no Pi 5 bastam: uma inferência
 bem-sucedida já dá as coordenadas. É o argumento que justifica o Raspberry Pi 5
@@ -406,32 +461,44 @@ em vez de uma Jetson.
 
 ## O que ainda não está resolvido
 
-Atualizado em 05/11/2026.
+Atualizado em 09/11/2026.
 
-- **Os limites de junta divergem entre três arquivos.** `braco.json`, o `.ino`
-  e o `pegada_manual.py` discordam no máximo do cotovelo (180 / 170 / 180) e no
-  da garra (130 / 140 / 130). Durante a coleta vale o JSON, que o `coletar.py`
-  empurra por `LIM` ao conectar; na bancada vale o que está compilado, que é
-  justamente quando um limite errado quebra alguma coisa. Qual é o certo é
-  medição, não dedução — `tests/test_firmware.py` avisa a cada rodada até que
-  os três sejam igualados.
-- **A referência angular do cotovelo é dedução, não medida.** 46°, obtida da
-  pose em que a garra encosta na superfície. Confere com as outras três poses
-  do mesmo ensaio, mas falta a verificação direta: `SET 2 136` deve deixar o
-  antebraço na vertical. Enquanto não for conferida, `"calibrado"` fica
-  `false`.
+- **O modelo ainda usa classes COCO**, não os objetos do projeto. O teste de
+  bancada roda com `mouse` (0,98 de confiança); o celular ficava em 0,40 a
+  0,56, porque o COCO espera ver celular na mão e não largado numa placa
+  clara. Treinar nas peças do projeto é a etapa que falta.
+- **A base da bounding box não é o centro do objeto.** A homografia converte o
+  pixel mais baixo da caixa, que numa vista oblíqua é a borda do objeto virada
+  para a câmera — não o meio do apoio. O viés é de meia profundidade do
+  objeto, e para uma peça de 50 mm seriam 25 mm, dez vezes o erro da
+  homografia. Falta a medição de régua que confirma o sinal e o tamanho; a
+  correção é somar meia profundidade na direção radial.
 - **O alívio de travamento nunca rodou com a garra real.** A leitura do ACS712
   e a lógica de alívio foram testadas só por simulação. `limite_stall_amp`
   está em 0: a corrente de pega medida até agora chega a 0,5 A, mas sem a
   corrente de travamento o limite seria arbitrário.
-- **A garra não fecha com o braço estendido.** Zumbe e não completa o curso,
-  com fonte de 5 V / 10 A. Suspeita no caminho de distribuição, ou no próprio
-  fechamento mecânico estar abaixo dos 90° comandados. Em investigação.
-- **O modelo ainda usa classes COCO**, não os objetos do projeto.
-- **O `coletar.py` nunca rodou com câmera de verdade.** A corrente abaixo da
-  câmera é testada em `tests/test_pipeline.py`, mas os dois elos de cima
-  (Picamera2 e YOLO) só existem no Pi. A homografia física também não foi
-  calibrada: o suporte da câmera não está instalado.
-- **O braço já rodou energizado**, com o firmware carregado, o protocolo
-  conferido e a sequência `DEMO` executada ponta a ponta. O que não rodou é a
-  corrente completa câmera → braço.
+- **A coleta nunca rodou com os servos energizados.** O `--dry-run` fechou
+  ponta a ponta em 09/11, com câmera, YOLO, homografia, portão e cinemática.
+  O que falta é o passo 6, com a mão no interruptor.
+- **O tempo mecânico da garra é estimativa.** `VEL_MECANICA_GARRA = 300 °/s`
+  dimensiona o `BUSY`; se o fechamento real for mais lento, o lado Python
+  manda a pose seguinte com a garra a meio curso. Só aparece na coleta de
+  verdade.
+- **O modo de falha da garra não foi reproduzido desde a correção.** Ela não
+  fechava com o braço estendido: 17° de curso a 10 °/s davam menos de uma
+  contagem do PCA9685 por tique, e a garra tremia sem andar. Tirar a
+  suavização resolveu, e o curso hoje é de 40°. Se voltar, o `AMP` separa
+  subalimentação (corrente baixa) de travamento mecânico (corrente alta).
+
+### Resolvido desde a versão anterior deste arquivo
+
+- Os limites de junta divergiam entre `braco.json`, o `.ino` e o
+  `pegada_manual.py`. O `.ino` é a fonte, e `tests/test_firmware.py` falha se
+  os três divergirem.
+- A referência angular do cotovelo era dedução (46°, da pose em que a garra
+  encosta na superfície) e estava errada. Medida na bancada: offset 180,
+  sentido +1.
+- A corrente completa câmera → braço nunca tinha rodado. Rodou em 09/11, em
+  `--dry-run`.
+- A homografia foi calibrada: 1,3 mm de erro médio e 2,2 mm máximo em três
+  pontos de conferência, contra um critério de 5 mm.

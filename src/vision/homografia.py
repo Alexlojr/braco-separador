@@ -93,6 +93,16 @@ class Homografia:
         vertical: a base é onde o objeto encosta na mesa, que é o plano
         da homografia. Usar o centro superestima a distância em objetos
         altos, e o erro cresce com a altura do objeto.
+
+        VIÉS CONHECIDO, ainda não corrigido: a base da caixa é o pixel mais
+        baixo da silhueta, e numa vista oblíqua esse pixel é a borda do
+        objeto virada para a CÂMERA, não o centro do apoio. O ponto devolvido
+        fica deslocado para perto da câmera por cerca de meia profundidade do
+        objeto. Some uns 2 mm numa peça pequena e uns 25 mm numa de 50 mm —
+        ordens de grandeza diferentes, e a segunda passa de qualquer erro de
+        calibração. A correção é somar meia profundidade na direção radial,
+        e depende de medir a peça; ver "O que ainda não está resolvido" no
+        README.
         """
         return self.pixel_para_mm((x1 + x2) / 2.0, y2)
 
