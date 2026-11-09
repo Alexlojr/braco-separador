@@ -139,18 +139,26 @@ float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 140.0};
 // suavizar — é o movimento mais brusco do sistema, e acontece a cada
 // energização. Ligue com o braço já perto dela.
 //
-//   base 90 aponta para a área de coleta | ombro 120 e cotovelo 120 deixam
-//   a garra a 147 mm de raio e 156 mm de altura — 31 mm mais recuada que a
-//   pose antiga de 140/120 | garra 105 fica 5° dentro do fim de curso,
-//   porque encostar nele toda vez que liga não é boa ideia.
+// Ombro 120 e cotovelo 120 deixam a garra a 112 mm do eixo e 59 mm de
+// altura. A garra em 105 fica 5° dentro do fim de curso, porque encostar
+// nele toda vez que liga não é boa ideia.
 //
-// Recolher o braço APROXIMA e SOBE ao mesmo tempo: é a mesma dobra, e o
-// limite acoplado proíbe o resto. Não existe pose recuada e baixa.
+// A base em 50 — e não 90, apontada para a área de coleta — tira o braço
+// do caminho da CÂMERA. Ao repouso a garra fica 18 mm antes da borda da
+// placa e a 59 mm de altura, e numa vista oblíqua isso se projeta em cima
+// do canto próximo dela: o objeto que estiver ali não é detectado. Em 50 a
+// garra vai para (72, 86), 22 mm fora da borda +X da placa. O depósito
+// fica do outro lado (base 129), sem conflito.
+//
+// Sobre o raio: dobrar mais o braço quase NÃO o encurta. De 140/120 a
+// 115/160 o raio fica entre 138 e 148 mm; o que muda é a altura, de 50
+// para 102 mm. 120/120 é a exceção que recua de verdade, para 112 mm, e é
+// por isso que é esta a pose.
 //
 // 120/120 fica exatamente no limite acoplado calculado (s2 >= 285 - 1,5·s1
 // + 15 dá 120 para s1=120). Os 15° são a margem do modelo, então sobra
 // essa margem e não mais: não recue o ombro além de 120 sem medir.
-float pose_repouso[NUM_SERVOS] = {90.0, 120.0, 120.0, 105.0};
+float pose_repouso[NUM_SERVOS] = {50.0, 120.0, 120.0, 105.0};
 
 float atual[NUM_SERVOS];      // posição sendo escrita agora (segue a curva)
 float alvo[NUM_SERVOS];       // para onde o movimento está indo
@@ -234,7 +242,7 @@ const int16_t demo_passos[][NUM_SERVOS] PROGMEM = {
   {   -1,   160,     120,     -1 },   // 10 estende sobre o depósito
   {   -1,    -1,      -1,    105 },   // 11 ABRE a garra, solta a peça
   {   -1,   130,     140,     -1 },   // 12 recolhe
-  {   90,   120,     120,     -1 },   // 13 volta ao repouso
+  {   50,   120,     120,     -1 },   // 13 volta ao repouso
 };
 const uint8_t DEMO_N = sizeof(demo_passos) / sizeof(demo_passos[0]);
 

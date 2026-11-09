@@ -115,6 +115,40 @@ def abrir_camera(largura=640, altura=480):
         return captura, cap.release
 
 
+def resolver_classe(pedido, nomes):
+    """
+    Aceita "cell phone", "CELL PHONE" ou "67" e devolve o número da classe.
+
+    Nome em vez de número porque trocar o objeto de teste é frequente, e
+    decorar que celular é 67 e mouse é 64 não ajuda ninguém. Erro de digitação
+    devolve None depois de listar o que se parece com o pedido — melhor que
+    rodar meia hora detectando a classe errada.
+    """
+    texto = str(pedido).strip()
+
+    if texto.lstrip("-").isdigit():
+        numero = int(texto)
+        if numero in nomes:
+            return numero
+        print(f"ERRO: não existe a classe {numero}. O modelo tem "
+              f"{len(nomes)} classes, de 0 a {max(nomes)}.")
+        return None
+
+    procurado = texto.lower()
+    for numero, nome in nomes.items():
+        if nome.lower() == procurado:
+            return numero
+
+    parecidos = [f"{n} ({i})" for i, n in nomes.items() if procurado in n.lower()]
+    print(f"ERRO: nenhuma classe chamada {texto!r}.")
+    if parecidos:
+        print("      Parecidas: " + ", ".join(parecidos[:8]))
+    else:
+        print("      Pequenas e boas para teste: mouse (64), remote (65), "
+              "cell phone (67), scissors (76), book (73), cup (41).")
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Coleta automática ponta a ponta")
     ap.add_argument("--dry-run", action="store_true",
@@ -132,10 +166,12 @@ def main() -> int:
     # permitidas, e a mao que ajusta a peca pontua como "person" acima do
     # proprio celular. A caixa muda de objeto no meio da janela, as posicoes
     # viram de outro lugar, e no fim da sequencia o braco iria buscar a mao.
-    ap.add_argument("--classe", type=int, default=67,
-                    help="classe COCO a coletar (padrão %(default)s = celular). "
-                         "Só ela entra na janela de estabilidade; o painel "
-                         "continua mostrando todas")
+    ap.add_argument("--classe", default="cell phone",
+                    help="classe COCO a coletar, por nome ou número "
+                         "(padrão %(default)r). Só ela entra na janela de "
+                         "estabilidade; o painel continua mostrando todas. "
+                         "Objetos pequenos e achatados dão coordenada melhor: "
+                         "mouse, remote, scissors, book, cup")
     ap.add_argument("--imgsz", type=int, default=640,
                     help="resolução de entrada do YOLO (padrão %(default)s). "
                          "O custo é quadrático: 320 roda ~4x mais rápido que "
@@ -214,10 +250,13 @@ def main() -> int:
     from ultralytics import YOLO
 
     modelo = YOLO(str(CAMINHO_MODELO))
+    classe_alvo = resolver_classe(args.classe, modelo.names)
+    if classe_alvo is None:
+        return 1
     capturar, fechar_camera = abrir_camera()
 
-    print(f"Coletando a classe {args.classe} "
-          f"({modelo.names[args.classe]}), confiança >= {args.confianca:.2f}.")
+    print(f"Coletando a classe {classe_alvo} "
+          f"({modelo.names[classe_alvo]}), confiança >= {args.confianca:.2f}.")
     print(f"Portão: {params_est.janela} detecções dentro de "
           f"{params_est.tolerancia_mm:.1f} mm, com no máximo "
           f"{params_est.intervalo_maximo_s:.1f} s entre elas. Ctrl-C para sair.\n")
@@ -240,7 +279,7 @@ def main() -> int:
             if time.monotonic() - ultima_coleta < PAUSA_APOS_COLETA_S:
                 continue
 
-            resultado = modelo(frame, classes=[args.classe],
+            resultado = modelo(frame, classes=[classe_alvo],
                                imgsz=args.imgsz, conf=0.10, verbose=False)[0]
 
             # O `conf` da chamada fica BAIXO de propósito: o limiar que decide

@@ -81,7 +81,7 @@ SEQUENCIA = [
     ("Estende sobre o depósito",        {1: 160, 2: 120}),
     ("ABRE a garra, solta a peça",      {3: GARRA_ABERTA}),
     ("Recolhe",                         {1: 130, 2: 140}),
-    ("Volta ao repouso",                {0: 90, 1: 120, 2: 120}),
+    ("Volta ao repouso",                {0: 50, 1: 120, 2: 120}),
 ]
 
 VELOCIDADE = 40.0   # °/s. Abaixo de ~23 o movimento entra na zona morta

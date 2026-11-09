@@ -16,7 +16,7 @@ Este arquivo é para ser lido no Pi, durante o trabalho.
 | ombro | offset 200, sentido −1, 90–180 |
 | cotovelo | offset 180, sentido +1, 70–160 |
 | garra | abre em 105 (90 mm), fecha em 140 | limites da junta 100–140 |
-| repouso | base 90, ombro 120, cotovelo 120, garra 105 |
+| repouso | base **50**, ombro 120, cotovelo 120, garra 105 — garra a (72, 86), 59 mm de altura |
 | limite acoplado | `s2 ≥ 285 − 1,5·s1 + 15`, validado em 5 poses |
 | faixa útil da área de coleta | **121 a 188 mm** do eixo da base |
 
@@ -253,7 +253,23 @@ inferência ficou em ~3 FPS a imgsz 640, com 27% dos intervalos passando de
 quadros zerava a janela. Se você mudar o `--imgsz`, vale reconferir — o
 `coletar.py` imprime a taxa e avisa se ela sozinha impedir o portão de fechar.
 
-**A coleta olha uma classe só** (`--classe`, padrão 67 = celular). O
+**A base do repouso está em 50, não em 90.** Com 90 a garra para 18 mm antes
+da borda da placa, a 59 mm de altura, e numa vista oblíqua ela se projeta em
+cima do canto próximo — o objeto que estiver ali não é detectado. Em 50 a garra
+vai para (72, 86), fora da borda +X da placa. Se ainda aparecer no quadro, 40
+ou 30 afastam mais; o depósito está do outro lado (base 129) e não atrapalha.
+
+Para conferir sem adivinhar, com o braço energizado:
+
+```
+SET 0 50
+SET 1 120
+SET 2 120
+```
+
+e olhe o painel. A placa precisa aparecer inteira e limpa.
+
+**A coleta olha uma classe só** (`--classe`, que aceita nome: `--classe mouse`). O
 `CLASSES_PERMITIDAS` com pessoa junto é para o painel. Na coleta, a mão que
 ajusta a peça pontua como `person` acima do próprio objeto, a caixa troca de
 objeto no meio da janela, e no fim o braço iria buscar a mão.
