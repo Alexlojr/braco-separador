@@ -467,12 +467,15 @@ Atualizado em 09/11/2026.
   bancada roda com `mouse` (0,98 de confiança); o celular ficava em 0,40 a
   0,56, porque o COCO espera ver celular na mão e não largado numa placa
   clara. Treinar nas peças do projeto é a etapa que falta.
-- **A base da bounding box não é o centro do objeto.** A homografia converte o
-  pixel mais baixo da caixa, que numa vista oblíqua é a borda do objeto virada
-  para a câmera — não o meio do apoio. O viés é de meia profundidade do
-  objeto, e para uma peça de 50 mm seriam 25 mm, dez vezes o erro da
-  homografia. Falta a medição de régua que confirma o sinal e o tamanho; a
-  correção é somar meia profundidade na direção radial.
+- **A base da bounding box não é o centro do objeto, e a correção está em
+  zero.** A homografia converte o pixel mais baixo da caixa, que numa vista
+  oblíqua é a borda do objeto virada para a câmera. Confirmado por régua em
+  09/11 com um mouse: relatado (−33, 137) mm, borda da frente (−32,5 , 130),
+  centro (−30, 150) — 7,0 mm de distância da borda contra 13,3 mm do centro, e
+  o erro quase todo em Y, com 0,5 mm em X. Viés radial, como o modelo previa.
+  O `deslocamento_radial_mm` do `braco.json` já aplica a correção, mas está em
+  0: o valor é meia profundidade do apoio da PEÇA, e a peça do projeto ainda
+  não foi medida assim. Para um haltere de 50 mm seriam uns 25 mm.
 - **O alívio de travamento nunca rodou com a garra real.** A leitura do ACS712
   e a lógica de alívio foram testadas só por simulação. `limite_stall_amp`
   está em 0: a corrente de pega medida até agora chega a 0,5 A, mas sem a

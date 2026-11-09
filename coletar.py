@@ -377,6 +377,16 @@ def main() -> int:
             print(f"\n{deteccao.rotulo} assentado em "
                   f"({x_mm:.0f}, {y_mm:.0f}) mm — {leitura.motivo}")
 
+            # O ponto da visão é a borda do objeto virada para a câmera. Se
+            # houver correção configurada, mostrar o ponto corrigido evita a
+            # confusão de comparar a linha de cima com uma régua posta no
+            # centro da peça e achar que a calibração está errada.
+            pega = controlador.ponto_de_pega(x_mm, y_mm)
+            if (pega[0], pega[1]) != (x_mm, y_mm):
+                print(f"  centro do apoio, com a correção radial de "
+                      f"{controlador.params.deslocamento_radial:.0f} mm: "
+                      f"({pega[0]:.0f}, {pega[1]:.0f}) mm")
+
             pode, motivo = controlador.alcancavel(x_mm, y_mm)
             if not pode:
                 # Recusar e seguir observando: o objeto pode ser empurrado para

@@ -381,6 +381,43 @@ checa(pose_entrada[2] > pose_descida[2],
       f"a entrada tem que SUBIR: desceu a {pose_descida[2]:.1f} mm e entrou a "
       f"{pose_entrada[2]:.1f} mm")
 
+# --- correcao radial do ponto da visao -----------------------------------
+#
+# A homografia entrega a base da bounding box, que numa vista obliqua e a
+# borda do objeto virada para a camera. O centro do apoio, que e onde a garra
+# fecha, fica mais longe no raio. Medido em 09/11/2026 com um mouse: relatado
+# (-33, 137), borda a regua (-32,5 , 130), centro (-30, 150) - erro de 7,0 mm
+# da borda e 13,3 mm do centro, quase todo em Y.
+#
+# Duas propriedades aqui: a correcao e RADIAL (nao muda o angulo da base) e
+# AFASTA da base. Trocar o sinal por engano puxaria a garra para dentro da
+# peca, que e o oposto do que se quer.
+p_desloc = dict(base_params, deslocamento_radial=12.0)
+c_desloc = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_desloc))
+bruto = (-33.0, 137.0)
+corrigido = c_desloc.ponto_de_pega(*bruto)
+
+r_bruto = _math.hypot(*bruto)
+r_corr = _math.hypot(*corrigido)
+checa(abs((r_corr - r_bruto) - 12.0) < 0.01,
+      f"a correcao deveria somar 12 mm no raio, somou {r_corr - r_bruto:.2f}")
+checa(abs(_math.atan2(*bruto[::-1]) - _math.atan2(*corrigido[::-1])) < 1e-9,
+      "a correcao nao pode mudar o angulo da base: ela e radial")
+
+# com deslocamento 0 (o padrao) nada muda, nem por arredondamento
+c_zero = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**base_params))
+checa(c_zero.ponto_de_pega(*bruto) == bruto,
+      "sem deslocamento configurado o ponto tem que passar intacto")
+
+# e a sequencia inteira tem de sair do ponto CORRIGIDO
+etapas_d = c_desloc.planejar(*bruto)
+entrada_d = next(e for e in etapas_d if "tronco" in e.descricao)
+ponto_entrada = _ponto(_angulos(entrada_d))
+checa(abs(_math.hypot(ponto_entrada[0], ponto_entrada[1]) - r_corr) < 1.0,
+      f"a entrada deveria mirar o raio corrigido {r_corr:.1f}, mirou "
+      f"{_math.hypot(ponto_entrada[0], ponto_entrada[1]):.1f}")
+
+
 # alvo que nao aceita o recuo minimo e recusado, e a mensagem diz por que
 p_colado = dict(base_params, recuo_entrada=90.0, recuo_minimo=90.0)
 c_colado = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_colado))

@@ -63,6 +63,22 @@ class ParametrosColeta:
     # lado para em (z_pega - subida_entrada) e o último movimento é para
     # cima. Ver o cabeçalho do módulo.
     subida_entrada: float = 5.0
+
+    # Correção do ponto que a visão entrega, ao longo do raio, afastando da
+    # base. A homografia converte a BASE da bounding box, que numa vista
+    # oblíqua é a borda do objeto virada para a câmera — não o centro do
+    # apoio, que é onde a garra precisa fechar.
+    #
+    # Medido em 09/11/2026 com um mouse: o script relatou (-33, 137) mm; a
+    # régua deu borda da frente em (-32,5 , 130) e centro em (-30, 150). O
+    # erro ficou 7,0 mm da borda e 13,3 mm do centro, e praticamente TODO
+    # em Y — 0,5 mm em X. Viés radial, como o modelo previa.
+    #
+    # Fica em 0 porque o valor certo depende da peça, e a peça do projeto
+    # ainda não foi medida: para um haltere de 50 mm o deslocamento seria da
+    # ordem de 25 mm, dez vezes o erro da homografia. Meça com a peça real e
+    # ponha em `deslocamento_radial_mm` no braco.json.
+    deslocamento_radial: float = 0.0
     # (x, y) do depósito, em mm. Precisa cair dentro dos limites da base:
     # um ponto "atrás" do braço (y negativo com x≈0) exige base ≈ -90°, que
     # nenhum servo de 0-180° alcança. Mantenha o depósito à frente ou ao lado.
@@ -133,6 +149,20 @@ class ControladorColeta:
             return True
         except PoseInalcancavel:
             return False
+
+    def ponto_de_pega(self, x: float, y: float):
+        """
+        O ponto da visão corrigido para o centro do apoio.
+
+        Afasta da base por `deslocamento_radial`, ao longo do raio. Radial e
+        não em Y porque o viés acompanha a direção de visada, e com a câmera
+        atrás da base essa direção é a radial — foi o que a medição de
+        09/11 mostrou, com o erro quase todo em Y para um alvo quase em
+        frente à base, e X errando 0,5 mm.
+        """
+        if not self.params.deslocamento_radial:
+            return x, y
+        return self._ponto_recuado(x, y, -self.params.deslocamento_radial)
 
     def _recuo_viavel(self, x: float, y: float, z: float) -> float:
         """
@@ -213,6 +243,10 @@ class ControladorColeta:
         """
         p = self.params
         dx, dy = p.deposito
+
+        # A visão entrega a borda do objeto, não o centro do apoio. Corrigir
+        # aqui, antes de tudo, faz o recuo e o sobrevoo saírem do ponto certo.
+        x, y = self.ponto_de_pega(x, y)
 
         # Valida o ponto de pega ANTES de procurar o recuo: se o alvo não é
         # alcançável, o erro tem que falar do alvo, e não do ponto de entrada.
