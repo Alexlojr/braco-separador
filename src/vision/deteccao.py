@@ -17,16 +17,83 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Classes COCO, provisórias até o modelo ser treinado nos objetos do projeto.
-# 0 = pessoa, 67 = celular. Servem para exercitar o pipeline inteiro antes de
-# existir dataset próprio.
+# Fallback para quando o braco.json não tem a seção "visao". Classes COCO,
+# provisórias até o modelo ser treinado nos objetos do projeto: 67 = celular.
 #
-# Isto NÃO alivia o processamento. O `classes=` do Ultralytics filtra DEPOIS
-# da inferência: a rede roda inteira de qualquer jeito, com as 80 saídas, e o
-# filtro só descarta caixas no fim. O que muda o custo é a resolução de
-# entrada (`imgsz`), que é quadrática — 320 custa um quarto de 640.
-CLASSES_PERMITIDAS = [0, 67]
+# Filtrar classe NÃO alivia o processamento. O `classes=` do Ultralytics filtra
+# DEPOIS da inferência: a rede roda inteira de qualquer jeito, com as 80
+# saídas, e o filtro só descarta caixas no fim. O que muda o custo é a
+# resolução de entrada (`imgsz`), que é quadrática — 320 custa um quarto
+# de 640.
+CLASSE_ALVO_PADRAO = "cell phone"
 CONFIANCA_MINIMA = 0.5
+
+# Compatibilidade: havia uma lista [pessoa, celular] usada direto pelo painel
+# e pelo visualizador, enquanto a coleta usava outra coisa. Era o painel
+# procurando celular enquanto a bancada testava com mouse, sem nada avisando.
+CLASSES_PERMITIDAS = [0, 67]
+
+class ClasseDesconhecida(ValueError):
+    """Pedido de classe que não existe no modelo. A mensagem lista parecidas."""
+
+
+def resolver_classe(pedido, nomes) -> int:
+    """
+    Aceita "mouse", "MOUSE" ou "64" e devolve o número da classe.
+
+    Nome em vez de número porque trocar o objeto de teste é frequente, e
+    decorar que celular é 67 e mouse é 64 não ajuda ninguém. Pedido inválido
+    levanta ClasseDesconhecida com as parecidas na mensagem, em vez de rodar
+    meia hora detectando a classe errada.
+    """
+    texto = str(pedido).strip()
+
+    if texto.lstrip("-").isdigit():
+        numero = int(texto)
+        if numero in nomes:
+            return numero
+        raise ClasseDesconhecida(
+            f"não existe a classe {numero}: o modelo vai de 0 a {max(nomes)}."
+        )
+
+    procurado = texto.lower()
+    for numero, nome in nomes.items():
+        if nome.lower() == procurado:
+            return numero
+
+    parecidas = [f"{n} ({i})" for i, n in nomes.items() if procurado in n.lower()]
+    dica = ("Parecidas: " + ", ".join(parecidas[:8]) if parecidas
+            else "Pequenas e boas para teste: mouse (64), remote (65), "
+                 "cell phone (67), scissors (76), book (73), cup (41).")
+    raise ClasseDesconhecida(f"nenhuma classe chamada {texto!r}. {dica}")
+
+
+def carregar_preferencias(caminho="config/braco.json"):
+    """
+    (classe_alvo, confianca_minima) da seção "visao" do braco.json.
+
+    Existe para haver UM lugar dizendo o que o sistema procura. Antes a
+    coleta tinha a classe por linha de comando e o painel tinha a lista fixa
+    no código: trocar o objeto de teste na coleta deixava o painel procurando
+    outra coisa, sem caixa nenhuma na tela e sem nada explicando por quê.
+
+    A classe sai como veio do arquivo — nome ou número. Quem usa resolve com
+    `resolver_classe`, que precisa do `model.names`.
+    """
+    import json
+    from pathlib import Path
+
+    try:
+        dados = json.loads(Path(caminho).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return CLASSE_ALVO_PADRAO, CONFIANCA_MINIMA
+
+    secao = dados.get("visao", {})
+    return (
+        secao.get("classe_alvo", CLASSE_ALVO_PADRAO),
+        float(secao.get("confianca_minima", CONFIANCA_MINIMA)),
+    )
+
 
 # Roda o YOLO a cada N frames. Entre inferências o desenho reaproveita a
 # última caixa, o que mantém a imagem fluida sem custar inferência.

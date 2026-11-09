@@ -23,8 +23,9 @@ from ultralytics import YOLO
 from src.vision.fonte import aplicar_rotacao
 from src.vision.quadro_publicado import ler as ler_publicado
 from src.vision.deteccao import (
-    CLASSES_PERMITIDAS,
-    CONFIANCA_MINIMA,
+    ClasseDesconhecida,
+    carregar_preferencias,
+    resolver_classe,
     INTERVALO_DETECCAO,
     desenhar,
     melhor_deteccao,
@@ -65,6 +66,24 @@ def iniciar_camera():
 
 model = carregar_modelo()
 picam2 = None   # aberta sob demanda, se nao houver coleta publicando
+
+# O que procurar vem do braco.json, o MESMO arquivo que o coletar.py le. Ter
+# a classe escrita aqui tambem foi o que fez o mouse nao aparecer no painel:
+# a lista fixa era [pessoa, celular], e mouse e a classe 64. Nao havia caixa
+# para desenhar, e nada na tela dizia por que.
+CAMINHO_CONFIG = BASE_DIR / "config" / "braco.json"
+_pedido, CONFIANCA = carregar_preferencias(CAMINHO_CONFIG)
+try:
+    CLASSE_ALVO = resolver_classe(_pedido, model.names)
+except ClasseDesconhecida as e:
+    st.error(f"classe_alvo invalida no braco.json: {e}")
+    st.stop()
+
+st.sidebar.markdown(
+    f"**Procurando:** {model.names[CLASSE_ALVO]} ({CLASSE_ALVO})\n\n"
+    f"**Confiança mínima:** {CONFIANCA:.2f}\n\n"
+    f"Vem da seção `visao` do `braco.json`, a mesma que o `coletar.py` lê."
+)
 
 if "rodando" not in st.session_state:
     st.session_state.rodando = False
@@ -113,8 +132,8 @@ while st.session_state.rodando:
     frame_count += 1
 
     if frame_count % INTERVALO_DETECCAO == 0:
-        resultado = model(frame, classes=CLASSES_PERMITIDAS, verbose=False)[0]
-        ultima_detec = melhor_deteccao(resultado, model.names, CONFIANCA_MINIMA)
+        resultado = model(frame, classes=[CLASSE_ALVO], verbose=False)[0]
+        ultima_detec = melhor_deteccao(resultado, model.names, CONFIANCA)
 
         if ultima_detec is not None:
             if st.session_state.ultimo_objeto != ultima_detec.nome:
@@ -127,7 +146,8 @@ while st.session_state.rodando:
         desenhar(frame, ultima_detec)
         status_placeholder.success(f"Detectando: {ultima_detec.rotulo}")
     else:
-        status_placeholder.info("Nenhum objeto detectado")
+        status_placeholder.info(
+            f"Nenhum {model.names[CLASSE_ALVO]} com confiança >= {CONFIANCA:.2f}")
 
     camera_placeholder.image(para_rgb(frame))
 

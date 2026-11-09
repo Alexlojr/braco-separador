@@ -269,10 +269,19 @@ SET 2 120
 
 e olhe o painel. A placa precisa aparecer inteira e limpa.
 
-**A coleta olha uma classe só** (`--classe`, que aceita nome: `--classe mouse`). O
-`CLASSES_PERMITIDAS` com pessoa junto é para o painel. Na coleta, a mão que
-ajusta a peça pontua como `person` acima do próprio objeto, a caixa troca de
-objeto no meio da janela, e no fim o braço iria buscar a mão.
+**O que o sistema procura está no `braco.json`, seção `visao`**, e os tres
+consumidores leem de la: o `coletar.py`, o painel e o `src/camera.py`.
+
+```json
+"visao": { "classe_alvo": "mouse", "confianca_minima": 0.5 }
+```
+
+Trocar o objeto de teste e editar essa linha. O `--classe` do `coletar.py`
+continua existindo para um teste rapido sem mexer no arquivo.
+
+Uma classe so, nao uma lista: a mao que ajusta a peca pontua como `person`
+acima do proprio objeto, a caixa troca de objeto no meio da janela, e no fim
+o braco iria buscar a mao.
 
 **O modelo ainda usa classes COCO.** O `coletar.py` detecta com os pesos base
 do YOLOv8n. Treinar nos objetos do projeto é a etapa seguinte, e não bloqueia

@@ -22,17 +22,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.vision.fonte import aplicar_rotacao  # noqa: E402
 from src.vision.deteccao import (  # noqa: E402
-    CLASSES_PERMITIDAS,
     INTERVALO_DETECCAO,
+    carregar_preferencias,
     desenhar,
     melhor_deteccao,
+    resolver_classe,
 )
 
 CAMINHO_MODELO = Path(__file__).resolve().parent.parent / "models" / "yolov8n.pt"
 
 
+CAMINHO_CONFIG = Path(__file__).resolve().parent.parent / "config" / "braco.json"
+
+
 def main() -> int:
     modelo = YOLO(str(CAMINHO_MODELO))
+    pedido, confianca = carregar_preferencias(CAMINHO_CONFIG)
+    alvo = resolver_classe(pedido, modelo.names)
+    print(f"Procurando {modelo.names[alvo]} ({alvo}), confiança >= {confianca:.2f}")
 
     picam2 = Picamera2()
     picam2.configure(
@@ -51,8 +58,8 @@ def main() -> int:
             contador += 1
 
             if contador % INTERVALO_DETECCAO == 0:
-                resultado = modelo(frame, classes=CLASSES_PERMITIDAS, verbose=False)[0]
-                ultima = melhor_deteccao(resultado, modelo.names)
+                resultado = modelo(frame, classes=[alvo], verbose=False)[0]
+                ultima = melhor_deteccao(resultado, modelo.names, confianca)
 
             if ultima is not None:
                 desenhar(frame, ultima)

@@ -168,7 +168,7 @@ bool  ligado[NUM_SERVOS];     // false = PWM cortado, junta solta
 unsigned long t_inicio[NUM_SERVOS];   // quando este movimento começou
 unsigned long duracao[NUM_SERVOS];    // quanto ele deve durar, em ms
 
-float velocidade = 80.0;      // graus por segundo, MÉDIA (ver suaviza())
+float velocidade = 90.0;      // graus por segundo, MÉDIA (ver suaviza())
 
 // Velocidade só da garra, com SPEEDG. Ela não está na cadeia cinemática, não
 // carrega massa e não precisa seguir caminho nenhum: não há motivo para andar

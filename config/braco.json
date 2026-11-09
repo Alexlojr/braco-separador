@@ -32,6 +32,25 @@
     "l3": 80.0
   },
   "offset_radial_mm": 57.8,
+  "_visao": [
+    "O QUE o sistema procura. Um lugar so: o coletar.py e o painel leem",
+    "daqui. Antes a classe estava na linha de comando da coleta e numa",
+    "lista fixa no app.py, entao trocar o objeto de teste deixava o painel",
+    "procurando outra coisa - sem caixa na tela e sem nada explicando.",
+    "",
+    "classe_alvo aceita nome ou numero COCO. Provisorio ate o modelo ser",
+    "treinado nas pecas do projeto. O mouse (64) deu 0,98 de confianca na",
+    "bancada contra 0,40 a 0,56 do celular (67), que o COCO espera ver na",
+    "mao e nao largado numa placa clara.",
+    "",
+    "Objeto ACHATADO da coordenada melhor que objeto pequeno: a",
+    "homografia usa a base da caixa, e num objeto alto a base da caixa e",
+    "a aresta mais perto da camera, nao o centro do apoio."
+  ],
+  "visao": {
+    "classe_alvo": "mouse",
+    "confianca_minima": 0.5
+  },
   "acoplamento_cotovelo": "absoluto",
   "_acoplamento_cotovelo": [
     "'absoluto' = mecanismo de paralelogramo: os dois servomotores ficam",

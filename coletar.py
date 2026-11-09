@@ -48,10 +48,12 @@ from src.vision.estabilidade import (  # noqa: E402
     PortaoEstabilidade,
 )
 from src.vision.deteccao import (  # noqa: E402
-    CONFIANCA_MINIMA,
+    ClasseDesconhecida,
+    carregar_preferencias,
     desenhar,
     melhor_bruta,
     melhor_deteccao,
+    resolver_classe,
 )
 from src.vision.fonte import aplicar_rotacao  # noqa: E402
 from src.vision.quadro_publicado import limpar, publicar  # noqa: E402
@@ -115,48 +117,15 @@ def abrir_camera(largura=640, altura=480):
         return captura, cap.release
 
 
-def resolver_classe(pedido, nomes):
-    """
-    Aceita "cell phone", "CELL PHONE" ou "67" e devolve o número da classe.
-
-    Nome em vez de número porque trocar o objeto de teste é frequente, e
-    decorar que celular é 67 e mouse é 64 não ajuda ninguém. Erro de digitação
-    devolve None depois de listar o que se parece com o pedido — melhor que
-    rodar meia hora detectando a classe errada.
-    """
-    texto = str(pedido).strip()
-
-    if texto.lstrip("-").isdigit():
-        numero = int(texto)
-        if numero in nomes:
-            return numero
-        print(f"ERRO: não existe a classe {numero}. O modelo tem "
-              f"{len(nomes)} classes, de 0 a {max(nomes)}.")
-        return None
-
-    procurado = texto.lower()
-    for numero, nome in nomes.items():
-        if nome.lower() == procurado:
-            return numero
-
-    parecidos = [f"{n} ({i})" for i, n in nomes.items() if procurado in n.lower()]
-    print(f"ERRO: nenhuma classe chamada {texto!r}.")
-    if parecidos:
-        print("      Parecidas: " + ", ".join(parecidos[:8]))
-    else:
-        print("      Pequenas e boas para teste: mouse (64), remote (65), "
-              "cell phone (67), scissors (76), book (73), cup (41).")
-    return None
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description="Coleta automática ponta a ponta")
     ap.add_argument("--dry-run", action="store_true",
                     help="mostra os comandos sem abrir a serial")
     ap.add_argument("--forcar", action="store_true",
                     help="roda mesmo com a config marcada como não calibrada")
-    ap.add_argument("--confianca", type=float, default=CONFIANCA_MINIMA,
-                    help="limiar de confiança do YOLO (padrão %(default)s). "
+    ap.add_argument("--confianca", type=float, default=None,
+                    help="limiar de confiança do YOLO. Padrão: o "
+                         "visao.confianca_minima do braco.json. "
                          "Abaixar aceita detecções mais fracas; o objeto "
                          "parado na mesa costuma pontuar menos que o mesmo "
                          "objeto na mão")
@@ -166,17 +135,25 @@ def main() -> int:
     # permitidas, e a mao que ajusta a peca pontua como "person" acima do
     # proprio celular. A caixa muda de objeto no meio da janela, as posicoes
     # viram de outro lugar, e no fim da sequencia o braco iria buscar a mao.
-    ap.add_argument("--classe", default="cell phone",
-                    help="classe COCO a coletar, por nome ou número "
-                         "(padrão %(default)r). Só ela entra na janela de "
-                         "estabilidade; o painel continua mostrando todas. "
-                         "Objetos pequenos e achatados dão coordenada melhor: "
-                         "mouse, remote, scissors, book, cup")
+    ap.add_argument("--classe", default=None,
+                    help="classe COCO a coletar, por nome ou número. Padrão: "
+                         "o visao.classe_alvo do braco.json, que o painel "
+                         "também lê. Objetos achatados dão coordenada melhor: "
+                         "mouse, remote, scissors")
     ap.add_argument("--imgsz", type=int, default=640,
                     help="resolução de entrada do YOLO (padrão %(default)s). "
                          "O custo é quadrático: 320 roda ~4x mais rápido que "
                          "640, com menos acerto em objeto pequeno no quadro")
     args = ap.parse_args()
+
+    # A config manda; a linha de comando sobrepõe. Assim trocar o objeto no
+    # braco.json troca para a coleta E para o painel de uma vez, e o
+    # --classe continua servindo para um teste rápido sem editar arquivo.
+    classe_cfg, confianca_cfg = carregar_preferencias(CAMINHO_CONFIG)
+    if args.classe is None:
+        args.classe = classe_cfg
+    if args.confianca is None:
+        args.confianca = confianca_cfg
 
     # ---- configuração ------------------------------------------------
     braco, calib, params_dict, calibrado = carregar_config(CAMINHO_CONFIG)
@@ -250,8 +227,10 @@ def main() -> int:
     from ultralytics import YOLO
 
     modelo = YOLO(str(CAMINHO_MODELO))
-    classe_alvo = resolver_classe(args.classe, modelo.names)
-    if classe_alvo is None:
+    try:
+        classe_alvo = resolver_classe(args.classe, modelo.names)
+    except ClasseDesconhecida as e:
+        print(f"ERRO: {e}")
         return 1
     capturar, fechar_camera = abrir_camera()
 
