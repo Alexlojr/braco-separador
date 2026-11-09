@@ -67,6 +67,13 @@ GARRA_FECHADA = 140
 #   1. a garra sempre sozinha na etapa dela;
 #   2. recolher antes de girar a base. Girar esticado é o caso em que o
 #      ombro está no maior torque, que é exatamente quando o servo reclama.
+#
+# Esta sequência é top-down — estende por cima, desce, fecha — e NÃO é a da
+# coleta automática. A de produção está em src/arm/coleta.py e entra de lado,
+# por baixo do chapéu da peça, porque descer no tronco é descer no chapéu.
+# Aqui o top-down continua servindo: este script existe para achar ângulos de
+# servo na mão, sem calibração nem cinemática, e para isso o caminho mais
+# simples é o melhor.
 # ---------------------------------------------------------------------------
 SEQUENCIA = [
     ("Preparo: recolhe e abre a garra", {1: 130, 2: 140}),

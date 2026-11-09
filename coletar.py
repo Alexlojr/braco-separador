@@ -257,6 +257,7 @@ def main() -> int:
 
     ultima_coleta = 0.0
     coletados = 0
+    abortadas = 0
 
     # Contadores de diagnóstico. A pergunta "por que não coleta?" tem três
     # respostas possíveis — não vê, vê fraco, ou vê e não assenta — e sem
@@ -368,16 +369,25 @@ def main() -> int:
                         if amp is not None:
                             linha += f"  (garra: {amp:.2f} A)"
                     print(linha)
+                # Chegou ao fim sem exceção: foi uma coleta de verdade.
+                coletados += 1
+                print(f"  concluída ({coletados} no total)\n")
             except PoseInalcancavel as e:
-                print(f"  coleta abortada: {e}")
+                # Nada se moveu: `executar` valida o plano inteiro antes do
+                # primeiro SET. Mas contar como concluída, que era o que
+                # acontecia aqui, estraga o numerador da taxa de acerto — e é
+                # justamente essa medida que vai para o capítulo de resultados.
+                print(f"  coleta abortada, nada foi enviado: {e}\n")
+                abortadas += 1
 
-            coletados += 1
-            print(f"  concluída ({coletados} no total)\n")
             portao.rearmar()
             ultima_coleta = time.monotonic()
 
     except KeyboardInterrupt:
-        print(f"\nEncerrando. {coletados} coleta(s) nesta sessão.")
+        resumo = f"\nEncerrando. {coletados} coleta(s) nesta sessão"
+        if abortadas:
+            resumo += f", {abortadas} abortada(s) por pose inalcançável"
+        print(resumo + ".")
 
     finally:
         fechar_camera()

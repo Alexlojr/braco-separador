@@ -423,9 +423,10 @@ void defineAlvo(uint8_t id, float angulo) {
   //
   // Deixá-la no lote era um defeito com sintoma enganoso. Ao colar várias
   // linhas no monitor serial, tudo cai no mesmo lote e a garra herda a
-  // duração do movimento mais longo: um fechamento de 17° esticado para os
-  // 4 s de um giro de ombro vira 10 °/s, abaixo da zona morta do servo. A
-  // garra treme, não fecha, e parece que o comando não chegou.
+  // duração do movimento mais longo: o fechamento esticado para os 4 s de um
+  // giro de ombro cai abaixo da zona morta do servo — com os 17° de curso da
+  // época davam 10 °/s. A garra treme, não fecha, e parece que o comando não
+  // chegou. Com os 35° de hoje a margem é maior, mas o defeito é o mesmo.
   //
   // O pegada_manual.py e a tabela DEMO contornavam isso por convenção, cada
   // um mandando a garra sozinha na sua etapa. Agora o firmware garante.
