@@ -20,7 +20,11 @@ import numpy as np
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
-from src.arm.coleta import ControladorColeta, ParametrosColeta  # noqa: E402
+from src.arm.coleta import (  # noqa: E402
+    ControladorColeta,
+    ParametrosColeta,
+    SincroniaPerdida,
+)
 from src.arm.kinematics import PoseInalcancavel, carregar_config  # noqa: E402
 from src.vision.estabilidade import (  # noqa: E402
     ParametrosEstabilidade,
@@ -587,6 +591,56 @@ c_direto = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
                              params=PC(**dict(base_params, raio_giro=None)))
 checa(not [e for e in c_direto.planejar(*alvo_mm) if "irando a base" in e.descricao],
       "raio_giro None deveria voltar ao movimento unico ate o deposito")
+
+
+# --- firmware mudo interrompe a sequencia --------------------------------
+#
+# O aguardar_parada devolve False quando o firmware para de confirmar o fim
+# do movimento - serial morta, Arduino reiniciado, ou movimento alem do
+# tempo limite. O valor estava sendo DESCARTADO, e o resultado era a
+# sequencia inteira disparando de uma vez, sem espera nenhuma.
+#
+# Na bancada isso apareceu como a base parando no meio do giro: os seis
+# passos chegaram em milissegundos, e o sintoma parecia falta de torque. Dois
+# dias de diagnostico foram para o lado errado por causa disto, entao vira
+# teste.
+class SerialQueEmudece:
+    def __init__(self, ate):
+        self.linhas = []
+        self.falhas_envio = 0
+        self.n = 0
+        self.ate = ate
+
+    def write(self, dados):
+        self.linhas.append(dados.decode().strip())
+        return len(dados)
+
+    def aguardar_parada(self):
+        self.n += 1
+        return self.n < self.ate
+
+
+muda = SerialQueEmudece(ate=6)
+c_muda = ControladorColeta(muda, braco=braco, calib=calib, params=PC(**base_params))
+try:
+    for _ in c_muda.executar(*alvo_mm):
+        pass
+    checa(False, "firmware mudo deveria interromper a sequencia")
+except SincroniaPerdida as e:
+    checa("etapa" in str(e), f"a mensagem deveria dizer em qual etapa parou: {e}")
+
+# so as 6 primeiras etapas podiam ter saido, mais o religar do finally.
+# Comparacao por LISTA e nao por pertinencia: varias etapas repetem o mesmo
+# SET, entao "esta na lista" daria falso positivo.
+etapas_todas = c_muda.planejar(*alvo_mm)
+esperado = [cmd for e in etapas_todas[:6] for cmd in e.comandos] + ["ATTACH ALL"]
+checa(muda.linhas == esperado,
+      f"depois de perder a sincronia saiu comando a mais: "
+      f"{muda.linhas[len(esperado):][:4]}")
+
+# e o braco nao pode ficar com junta solta depois de abortar
+checa("ATTACH ALL" in muda.linhas,
+      "ao abortar com juntas soltas, o finally tem que religar tudo")
 
 
 # alvo que nao aceita o recuo minimo e recusado, e a mensagem diz por que

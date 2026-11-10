@@ -41,7 +41,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
-from src.arm.coleta import ControladorColeta, ParametrosColeta  # noqa: E402
+from src.arm.coleta import (  # noqa: E402
+    ControladorColeta,
+    ParametrosColeta,
+    SincroniaPerdida,
+)
 from src.arm.kinematics import PoseInalcancavel, carregar_config  # noqa: E402
 from src.vision.estabilidade import (  # noqa: E402
     ParametrosEstabilidade,
@@ -459,6 +463,8 @@ def main() -> int:
                         for _, direcao, linha_h in hist[vistas:]:
                             if direcao == "RX":
                                 print(f"       <- {linha_h}")
+                            elif direcao == "ERRO":
+                                print(f"       !! {linha_h}")
                         vistas = len(hist)
                     linha = f"  {etapa.descricao}"
                     # Depois de fechar, a corrente da garra é o dado que diz se
@@ -473,6 +479,15 @@ def main() -> int:
                 # Chegou ao fim sem exceção: foi uma coleta de verdade.
                 coletados += 1
                 print(f"  concluída ({coletados} no total)\n")
+            except SincroniaPerdida as e:
+                print(f"\n  COLETA INTERROMPIDA: {e}")
+                print("  O braco pode ter ficado numa pose intermediaria.")
+                print("  Duas causas, e as duas deixam a serial muda:")
+                print("    - o Arduino reinicia se a tensao cair no pico de")
+                print("      corrente, e volta para a pose de repouso sozinho;")
+                print("    - porta USB que cai derruba a serial sem aviso.")
+                abortadas += 1
+                break
             except PoseInalcancavel as e:
                 # Nada se moveu: `executar` valida o plano inteiro antes do
                 # primeiro SET. Mas contar como concluída, que era o que

@@ -104,6 +104,7 @@ class MockArmSerial:
             except Exception:
                 self._serial_real = None
 
+        self.falhas_envio = 0
         self.braco_real = self._serial_real is not None
         self.port = porta_arduino if self.braco_real else port
 
@@ -130,8 +131,14 @@ class MockArmSerial:
         if self._serial_real is not None:
             try:
                 self._serial_real.write((linha + "\n").encode())
-            except Exception:
-                pass
+            except Exception as e:
+                # Engolir isto calado foi o que deixou uma sequencia inteira
+                # sair por uma serial morta sem ninguem notar: os comandos
+                # eram "enviados", o braco nao se mexia, e o sintoma aparecia
+                # como servo travando. Registrar nao conserta a porta, mas
+                # poe a falha onde da para ver.
+                self.falhas_envio += 1
+                self._registra("ERRO", f"falha ao enviar {linha!r}: {e}")
             # Não enfileira a resposta simulada: com hardware presente, quem
             # responde é o firmware. Enfileirar as duas faria a fila crescer
             # sem fim e mascararia a resposta real.

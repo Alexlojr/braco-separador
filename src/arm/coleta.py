@@ -202,6 +202,22 @@ class ParametrosColeta:
     garra_fechada: float | None = None
 
 
+class SincroniaPerdida(RuntimeError):
+    """
+    O firmware parou de confirmar que terminou o movimento.
+
+    Acontece quando a porta serial morre, quando o Arduino reinicia, ou
+    quando o braco fica em movimento alem do tempo limite. Nos tres casos o
+    lado Python perdeu o unico sinal que tinha de onde o braco esta.
+
+    Isto PRECISA interromper a sequencia. O `aguardar_parada` devolve False
+    em vez de travar - decisao certa - mas o valor estava sendo descartado, e
+    o resultado era a sequencia inteira disparando de uma vez, sem espera
+    nenhuma entre etapas. Na bancada isso apareceu como a base parando no
+    meio do giro: os seis passos chegaram em milissegundos.
+    """
+
+
 @dataclass
 class Etapa:
     descricao: str
@@ -493,14 +509,22 @@ class ControladorColeta:
         real sem que este módulo precise saber que o Streamlit existe.
         """
         etapas = self.planejar(x, y)   # valida tudo antes de mover
+        concluiu = False
 
         try:
             yield from self._executar_etapas(etapas, ao_progredir)
+            concluiu = True
         finally:
-            # Ctrl-C entre um DETACH e o ATTACH correspondente deixaria o
-            # braço mole, provavelmente no ar e com a peça. Religar aqui custa
-            # um comando inócuo quando não houve DETACH nenhum.
-            if self.params.soltar_na_pega:
+            # Saída anormal entre um DETACH e o ATTACH correspondente deixaria
+            # o braço mole, provavelmente no ar e com a peça. Vale para Ctrl-C,
+            # para a sincronia perdida e para qualquer exceção.
+            #
+            # Só na saída anormal: a sequência completa já religa tudo no
+            # caminho, e mandar de novo poluiria o fim de toda coleta com um
+            # comando que não faz nada.
+            if not concluiu and (self.params.soltar_na_pega
+                                 or self.params.soltar_no_giro
+                                 or self.params.soltar_garra_no_giro):
                 self.serial.write(b"ATTACH ALL\n")
 
     def _executar_etapas(self, etapas, ao_progredir):
@@ -520,8 +544,16 @@ class ControladorColeta:
             # sentidos, e o erro perigoso é o curto: a etapa seguinte começa
             # com a anterior pela metade, e a garra sobe antes de ter fechado.
             aguardar = getattr(self.serial, "aguardar_parada", None)
-            if aguardar is not None:
-                aguardar()
+            if aguardar is not None and not aguardar():
+                falhas = getattr(self.serial, "falhas_envio", 0)
+                raise SincroniaPerdida(
+                    f"o firmware parou de confirmar o fim do movimento na "
+                    f"etapa {etapa.descricao!r}"
+                    + (f"; {falhas} comando(s) falharam ao sair pela serial"
+                       if falhas else "")
+                    + ". Sem essa confirmacao nao da para saber onde o braco "
+                      "esta, e seguir mandando pose seria chutar."
+                )
 
             # Depois de chegar, uma pausa curta para o braço assentar: o servo
             # para no ângulo, mas a estrutura de acrílico ainda oscila um
