@@ -133,6 +133,21 @@ class ParametrosColeta:
     # soltas. Por isso é separado, e por isso vale testar com peça antes de
     # confiar: se o braço ceder durante o giro, desligue.
     soltar_no_giro: bool = False
+
+    # Fatia o giro da base em passos de no maximo tantos graus. `None` gira
+    # de uma vez.
+    #
+    # Servo e controlador proporcional: o esforco acompanha o ERRO de
+    # posicao. Um alvo 25 graus adiante satura o driver e pede corrente
+    # maxima de uma vez; cinco alvos de 5 graus nunca saturam, e entre eles a
+    # fonte recupera. Nao e o mesmo que adicionar atraso: muda o pico, nao so
+    # o intervalo.
+    #
+    # Isso importa aqui porque a alimentacao dos servos passa por protoboard
+    # e jumpers, cuja resistencia de contato vira queda de tensao no pico - e
+    # torque de servo e quase proporcional a tensao. A correcao de fundo e
+    # eletrica; esta e a que se faz por software.
+    passo_giro: float | None = None
     # (x, y) do depósito, em mm. Precisa cair dentro dos limites da base:
     # um ponto "atrás" do braço (y negativo com x≈0) exige base ≈ -90°, que
     # nenhum servo de 0-180° alcança. Mantenha o depósito à frente ou ao lado.
@@ -388,13 +403,44 @@ class ControladorColeta:
         soltar = [f"DETACH {c}" for c in braco_sem_pwm] if p.soltar_no_giro else []
         religar = [f"ATTACH {c}" for c in braco_sem_pwm] if p.soltar_no_giro else []
 
-        return [
-            Etapa(f"Recolhendo para girar, a {p.raio_giro:.0f} mm",
-                  cmds_recolhido),
-            Etapa("Girando a base para o depósito", soltar + so_a_base),
-            Etapa("Estendendo sobre o depósito",
-                  religar + self._cmds_pose(dx, dy, z)),
-        ]
+        etapas = [Etapa(f"Recolhendo para girar, a {p.raio_giro:.0f} mm",
+                        cmds_recolhido)]
+        etapas += self._etapas_giro(cmds_recolhido, so_a_base, soltar)
+        etapas.append(Etapa("Estendendo sobre o depósito",
+                            religar + self._cmds_pose(dx, dy, z)))
+        return etapas
+
+    def _etapas_giro(self, cmds_recolhido, so_a_base, soltar):
+        """
+        O giro da base, de uma vez ou fatiado em `passo_giro` graus.
+
+        Fatiar reduz o PICO de corrente, e não só o intervalo: o servo
+        aciona proporcionalmente ao erro de posição, então um alvo 25° à
+        frente satura o driver e cinco alvos de 5° não.
+        """
+        canal = self.calib.base.canal
+        passo = self.params.passo_giro
+
+        if passo is None or not so_a_base:
+            return [Etapa("Girando a base para o depósito", soltar + so_a_base)]
+
+        prefixo = f"SET {canal} "
+        inicio = next(float(c[len(prefixo):]) for c in cmds_recolhido
+                      if c.startswith(prefixo))
+        fim = next(float(c[len(prefixo):]) for c in so_a_base
+                   if c.startswith(prefixo))
+
+        curso = fim - inicio
+        n = max(1, math.ceil(abs(curso) / passo))
+
+        etapas = []
+        for k in range(1, n + 1):
+            angulo = inicio + curso * k / n
+            etapas.append(Etapa(
+                f"Girando a base, {k}/{n}",
+                (soltar if k == 1 else []) + [f"SET {canal} {round(angulo, 1)}"],
+            ))
+        return etapas
 
     def _no_raio(self, x: float, y: float, raio: float):
         """O mesmo ângulo de base, no raio pedido."""

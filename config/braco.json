@@ -296,6 +296,22 @@
       "e a aceleracao lateral do giro faz forca nas juntas soltas. Teste com",
       "peca antes de confiar: se o braco ceder durante o giro, desligue."
     ],
+    "_passo_giro": [
+      "Fatia o giro da base em passos de no maximo tantos graus. null gira",
+      "de uma vez.",
+      "",
+      "Servo e controlador proporcional: o esforco acompanha o ERRO de",
+      "posicao. Alvo 25 graus adiante satura o driver e pede corrente maxima",
+      "de uma vez; cinco alvos de 5 graus nunca saturam, e entre eles a",
+      "fonte recupera. Nao e o mesmo que por atraso: muda o PICO.",
+      "",
+      "Importa porque a alimentacao dos servos passa por protoboard e",
+      "jumpers, cuja resistencia de contato vira queda de tensao no pico, e",
+      "torque de servo e quase proporcional a tensao. A correcao de fundo e",
+      "eletrica - alimentar o PCA9685 por fio grosso direto da fonte - e",
+      "esta e a que se faz por software."
+    ],
+    "passo_giro_graus": 8.0,
     "soltar_no_giro": false,
     "soltar_na_pega": false,
     "deslocamento_radial_mm": 25.0,

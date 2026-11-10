@@ -219,11 +219,11 @@ for etapa in controlador.executar(leitura.x_mm, leitura.y_mm):
     if not serial.parado:
         cortadas.append((etapa.descricao, serial.pendente_s))
 
-checa(len(etapas) == 11, f"a coleta deveria ter 11 etapas, tem {len(etapas)}")
+checa(len(etapas) == 15, f"a coleta deveria ter 15 etapas, tem {len(etapas)}")
 # 23 e nao 25: a etapa do giro manda SO a base. Recolhido e girado estao no
 # mesmo raio e na mesma altura, entao ombro e cotovelo repetiriam o proprio
 # angulo - e com soltar_no_giro seriam comando para junta sem PWM.
-checa(len(serial.linhas) == 23, f"deveriam sair 23 comandos, sairam {len(serial.linhas)}")
+checa(len(serial.linhas) == 27, f"deveriam sair 27 comandos, sairam {len(serial.linhas)}")
 checa(all(l.startswith("SET ") or l == "HOME" for l in serial.linhas),
       "todo comando deveria ser SET ou HOME")
 checa(serial.linhas[-1] == "HOME", "a sequencia deveria terminar em HOME")
@@ -483,7 +483,8 @@ checa(not [c for c in todos if c.startswith(("DETACH", "ATTACH"))],
 #   1. na etapa do giro, SO a base se move;
 #   2. ela gira num raio menor que o do alvo (recolhida).
 etapas_t = controlador.planejar(*alvo_mm)
-giro = next(e for e in etapas_t if "irando a base" in e.descricao)
+giros = [e for e in etapas_t if "irando a base" in e.descricao]
+giro = giros[-1]   # o ultimo passo do giro chega ao angulo final
 recolhe = next(e for e in etapas_t if "ecolhendo" in e.descricao)
 
 ang_giro = _angulos(giro)
@@ -518,6 +519,24 @@ r_alvo = _math.hypot(*_ponto(_angulos(
 checa(r_recolhe < r_alvo,
       f"deveria recolher antes de girar: raio {r_recolhe:.0f} contra "
       f"{r_alvo:.0f} do alvo")
+
+# fatiado: todo passo so manda a base, e eles sobem monotonicamente ate o fim
+angs = [_angulos(g)[calib.base.canal] for g in giros]
+checa(all(list(_angulos(g)) == [calib.base.canal] for g in giros),
+      "todo passo do giro so pode mandar a base")
+crescente = all(b >= a for a, b in zip(angs, angs[1:]))
+decrescente = all(b <= a for a, b in zip(angs, angs[1:]))
+checa(crescente or decrescente,
+      f"os passos do giro deveriam ir numa direcao so, vieram {angs}")
+checa(abs(angs[-1] - ang_recolhe[calib.base.canal]
+          - (ang_giro[calib.base.canal] - ang_recolhe[calib.base.canal])) < 0.01,
+      "o ultimo passo tem que chegar no angulo final da base")
+if base_params.get("passo_giro"):
+    maior = max(abs(b - a) for a, b in
+                zip([ang_recolhe[calib.base.canal]] + angs, angs))
+    checa(maior <= base_params["passo_giro"] + 0.1,
+          f"passo de {maior:.1f} graus acima do passo_giro "
+          f"{base_params['passo_giro']:.1f}")
 
 # com raio_giro None volta ao movimento unico, para poder comparar
 c_direto = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
