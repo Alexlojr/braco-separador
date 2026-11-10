@@ -284,6 +284,19 @@
       "folga na faixa alcancavel a z=80, que vai de 114 a 188 mm."
     ],
     "raio_giro_mm": 130.0,
+    "_soltar_no_giro": [
+      "Corta o PWM do ombro e do cotovelo durante o giro da base. Eles nao",
+      "se movem nessa etapa - so seguram a pose, e quem segura de verdade e",
+      "o atrito do redutor. Soltos, a corrente deles sobra para a base, que",
+      "e a unica que precisa de torque ali.",
+      "",
+      "A GARRA NUNCA e solta: ela esta segurando a peca.",
+      "",
+      "Diferente do soltar_na_pega, aqui ha movimento de verdade acontecendo,",
+      "e a aceleracao lateral do giro faz forca nas juntas soltas. Teste com",
+      "peca antes de confiar: se o braco ceder durante o giro, desligue."
+    ],
+    "soltar_no_giro": false,
     "soltar_na_pega": false,
     "deslocamento_radial_mm": 25.0,
     "recuo_entrada_mm": 30.0,

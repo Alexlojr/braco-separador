@@ -220,7 +220,10 @@ for etapa in controlador.executar(leitura.x_mm, leitura.y_mm):
         cortadas.append((etapa.descricao, serial.pendente_s))
 
 checa(len(etapas) == 11, f"a coleta deveria ter 11 etapas, tem {len(etapas)}")
-checa(len(serial.linhas) == 25, f"deveriam sair 25 comandos, sairam {len(serial.linhas)}")
+# 23 e nao 25: a etapa do giro manda SO a base. Recolhido e girado estao no
+# mesmo raio e na mesma altura, entao ombro e cotovelo repetiriam o proprio
+# angulo - e com soltar_no_giro seriam comando para junta sem PWM.
+checa(len(serial.linhas) == 23, f"deveriam sair 23 comandos, sairam {len(serial.linhas)}")
 checa(all(l.startswith("SET ") or l == "HOME" for l in serial.linhas),
       "todo comando deveria ser SET ou HOME")
 checa(serial.linhas[-1] == "HOME", "a sequencia deveria terminar em HOME")
@@ -490,6 +493,24 @@ moveu = [c for c in ang_giro
          if c in ang_recolhe and abs(ang_giro[c] - ang_recolhe[c]) > 0.5]
 checa(moveu == [calib.base.canal],
       f"no giro so a base (canal {calib.base.canal}) pode se mover, moveram {moveu}")
+checa(list(ang_giro) == [calib.base.canal],
+      f"a etapa do giro so deveria MANDAR a base, mandou {sorted(ang_giro)}")
+
+# com soltar_no_giro, ombro e cotovelo saem do PWM e voltam depois - e a
+# garra NUNCA sai, porque ela esta segurando a peca
+c_giro = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
+                           params=PC(**dict(base_params, soltar_no_giro=True)))
+et_giro = c_giro.planejar(*alvo_mm)
+cmds_giro = next(e for e in et_giro if "irando a base" in e.descricao).comandos
+soltos = {int(c.split()[1]) for c in cmds_giro if c.startswith("DETACH")}
+checa(soltos == {calib.ombro.canal, calib.cotovelo.canal},
+      f"no giro deveriam sair do PWM ombro e cotovelo, sairam {soltos}")
+checa(calib.garra.canal not in soltos, "a garra NAO pode ser solta: ela segura a peca")
+checa(calib.base.canal not in soltos, "a base NAO pode ser solta: ela e quem gira")
+
+religados = {int(c.split()[1]) for e in et_giro for c in e.comandos
+             if c.startswith("ATTACH")}
+checa(soltos <= religados, f"soltou {soltos} e so religou {religados}")
 
 r_recolhe = _math.hypot(*_ponto(ang_recolhe)[:2])
 r_alvo = _math.hypot(*_ponto(_angulos(

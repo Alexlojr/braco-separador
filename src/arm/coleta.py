@@ -118,6 +118,21 @@ class ParametrosColeta:
     # com folga dentro da faixa alcançável na altura de transporte (114 a
     # 188 mm).
     raio_giro: float | None = 130.0
+
+    # Corta o PWM do ombro e do cotovelo durante o giro da base.
+    #
+    # No giro eles não se movem: só seguram a pose, e quem segura de verdade
+    # é o atrito do redutor — medido em 09/11, com DETACH a ombro 160 e a
+    # peça na garra, nada se mexeu. Soltos, a corrente que eles gastavam
+    # segurando sobra para a base, que é a única que precisa de torque ali.
+    #
+    # A GARRA NUNCA É SOLTA aqui: ela está segurando a peça.
+    #
+    # Diferente do soltar_na_pega, este intervalo tem movimento de verdade
+    # acontecendo, e a aceleração lateral do giro faz força nas juntas
+    # soltas. Por isso é separado, e por isso vale testar com peça antes de
+    # confiar: se o braço ceder durante o giro, desligue.
+    soltar_no_giro: bool = False
     # (x, y) do depósito, em mm. Precisa cair dentro dos limites da base:
     # um ponto "atrás" do braço (y negativo com x≈0) exige base ≈ -90°, que
     # nenhum servo de 0-180° alcança. Mantenha o depósito à frente ou ao lado.
@@ -361,12 +376,24 @@ class ControladorColeta:
         perto_alvo = self._no_raio(x, y, p.raio_giro)
         perto_dep = self._no_raio(dx, dy, p.raio_giro)
 
+        cmds_recolhido = self._cmds_pose(*perto_alvo, z)
+        cmds_girado = self._cmds_pose(*perto_dep, z)
+
+        # Só o que MUDA. Recolhido e girado estão no mesmo raio e na mesma
+        # altura, então ombro e cotovelo repetem o mesmo ângulo e os comandos
+        # deles seriam ruído — e, com eles soltos, comando para junta sem PWM.
+        so_a_base = [c for c in cmds_girado if c not in cmds_recolhido]
+
+        braco_sem_pwm = [self.calib.ombro.canal, self.calib.cotovelo.canal]
+        soltar = [f"DETACH {c}" for c in braco_sem_pwm] if p.soltar_no_giro else []
+        religar = [f"ATTACH {c}" for c in braco_sem_pwm] if p.soltar_no_giro else []
+
         return [
             Etapa(f"Recolhendo para girar, a {p.raio_giro:.0f} mm",
-                  self._cmds_pose(*perto_alvo, z)),
-            Etapa("Girando a base para o depósito",
-                  self._cmds_pose(*perto_dep, z)),
-            Etapa("Estendendo sobre o depósito", self._cmds_pose(dx, dy, z)),
+                  cmds_recolhido),
+            Etapa("Girando a base para o depósito", soltar + so_a_base),
+            Etapa("Estendendo sobre o depósito",
+                  religar + self._cmds_pose(dx, dy, z)),
         ]
 
     def _no_raio(self, x: float, y: float, raio: float):
