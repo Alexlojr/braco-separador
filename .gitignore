@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+venv-treino/
 
 # Gerado pela calibração da câmera: vale só para a montagem física atual,
 # não faz sentido versionar.

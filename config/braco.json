@@ -50,11 +50,13 @@
   "visao": {
     "_modelo": [
       "Pesos do YOLO, relativo a raiz do projeto. Coleta, painel e camera",
-      "leem daqui. Depois do treino, trocar para o best.pt, por exemplo",
-      "runs/detect/train/weights/best.pt - e passar a coleta com",
-      "--classe peca,mouse, porque 'peca' nao existe nos pesos base."
+      "leem daqui. separador.pt e o YOLOv8n ajustado em 10/11 com duas",
+      "classes (0 peca, 1 mouse): 160 imagens de treino, 27 de validacao",
+      "em posicoes distintas, 60 epocas, imgsz 640. Validacao: P 0.996,",
+      "R 1.000, mAP50 0.995, mAP50-95 0.961. Rodar a coleta com",
+      "--classe peca,mouse. Os pesos base (yolov8n.pt) nao tem 'peca'."
     ],
-    "modelo": "models/yolov8n.pt",
+    "modelo": "models/separador.pt",
     "classe_alvo": "mouse",
     "confianca_minima": 0.5
   },
