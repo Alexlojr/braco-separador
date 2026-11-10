@@ -481,9 +481,47 @@ class ControladorColeta:
                      self._cmds_pose(dx, dy, p.z_soltura, pose))]
               if p.z_soltura is not None else []),
             Etapa("Soltando o objeto", soltar + [self._cmd_garra(False)]),
-            Etapa("Voltando para HOME", religar + ["HOME"]),
         ]
+        etapas += self._etapas_saida(dx, dy, pose, religar)
         return etapas
+
+    def _etapas_saida(self, dx, dy, pose, religar):
+        """
+        Sai do deposito pelo caminho inverso da entrada: recua, sobe, HOME.
+
+        Ir direto para o HOME arrastava a peca. O HOME e interpolado no
+        espaco das juntas, todas ao mesmo tempo, e com a garra ainda na
+        altura de soltura os dedos varriam a peca recem-solta.
+
+        Subir antes NAO resolve, e e a armadilha aqui: a soltura acontece
+        na mesma altura da pega, com a garra no tronco, POR BAIXO do
+        chapeu. Subir dali engancha o disco superior e levanta a peca de
+        novo. A saida tem de espelhar a entrada - recuar ao longo do
+        raio, no mesmo angulo de base, ate tirar a garra de baixo do
+        chapeu - e so entao subir.
+
+        O recuo usa o mesmo `_recuo_viavel` da entrada, com o mesmo piso:
+        abaixo de `recuo_minimo` a garra ainda estaria sob o chapeu. E
+        tudo e validado em `planejar`, antes do primeiro SET.
+
+        Com `z_soltura = None` a peca cai da altura de transporte, a
+        garra ja esta acima dela, e nao ha o que recuar.
+        """
+        p = self.params
+        if p.z_soltura is None:
+            return [Etapa("Voltando para HOME", religar + ["HOME"])]
+
+        recuo = self._recuo_viavel(dx, dy, p.z_soltura)
+        sx, sy = self._ponto_recuado(dx, dy, recuo)
+        return [
+            # O ATTACH vem aqui, e nao no HOME: e este o primeiro movimento
+            # do braco depois da soltura.
+            Etapa(f"Recuando {recuo:.0f} mm do depósito, sem arrastar a peça",
+                  religar + self._cmds_pose(sx, sy, p.z_soltura, pose)),
+            Etapa(f"Subindo a {p.z_transporte:.0f} mm, acima da peça",
+                  self._cmds_pose(sx, sy, p.z_transporte, pose)),
+            Etapa("Voltando para HOME", ["HOME"]),
+        ]
 
     def _etapas_transporte(self, x, y, dx, dy, pose=None):
         """

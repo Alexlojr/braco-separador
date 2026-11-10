@@ -90,6 +90,37 @@ for rotulo, plano in (("esquerdo", plano_esq), ("direito", plano_dir)):
     checa(plano[-1].comandos == ["HOME"],
           f"plano do deposito {rotulo} tinha que terminar em HOME")
 
+# saida do deposito: recua no MESMO angulo de base, depois sobe, depois HOME.
+# Subir direto engancharia o chapeu (a soltura e na altura da pega, sob o
+# disco superior); recuar de lado varreria a peca com a lateral dos dedos.
+def base_da_etapa(etapa):
+    for cmd in etapa.comandos:
+        partes = cmd.split()
+        if len(partes) == 3 and partes[0] == "SET" and partes[1] == str(calib.base.canal):
+            return float(partes[2])
+    return None
+
+
+for rotulo, plano in (("esquerdo", plano_esq), ("direito", plano_dir)):
+    nomes = [e.descricao for e in plano]
+    i_solta = next((i for i, n in enumerate(nomes) if n.startswith("Soltando")), None)
+    checa(i_solta is not None, f"plano {rotulo} sem etapa de soltura")
+    if i_solta is None:
+        continue
+    saida = plano[i_solta + 1:]
+    checa(len(saida) == 3 and saida[0].descricao.startswith("Recuando")
+          and saida[1].descricao.startswith("Subindo")
+          and saida[2].comandos == ["HOME"],
+          f"saida do deposito {rotulo} deveria ser recua -> sobe -> HOME, "
+          f"veio {[e.descricao for e in saida]}")
+    if len(saida) == 3:
+        b_solta = base_da_etapa(plano[i_solta - 1])
+        b_recuo = base_da_etapa(saida[0])
+        checa(b_solta is not None and b_recuo is not None
+              and abs(b_solta - b_recuo) < 0.05,
+              f"recuo do deposito {rotulo} mudou a base ({b_solta} -> {b_recuo}): "
+              f"tem de ser radial, senao os dedos varrem a peca de lado")
+
 # o controlador nao guarda estado do destino entre ciclos
 depois = ctrl.planejar(*ALVO)
 checa([e.comandos for e in depois] == [e.comandos for e in padrao],

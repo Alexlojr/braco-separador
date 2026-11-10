@@ -48,6 +48,13 @@
     "a aresta mais perto da camera, nao o centro do apoio."
   ],
   "visao": {
+    "_modelo": [
+      "Pesos do YOLO, relativo a raiz do projeto. Coleta, painel e camera",
+      "leem daqui. Depois do treino, trocar para o best.pt, por exemplo",
+      "runs/detect/train/weights/best.pt - e passar a coleta com",
+      "--classe peca,mouse, porque 'peca' nao existe nos pesos base."
+    ],
+    "modelo": "models/yolov8n.pt",
     "classe_alvo": "mouse",
     "confianca_minima": 0.5
   },
@@ -334,9 +341,16 @@
       "jumpers, cuja resistencia de contato vira queda de tensao no pico, e",
       "torque de servo e quase proporcional a tensao. A correcao de fundo e",
       "eletrica - alimentar o PCA9685 por fio grosso direto da fonte - e",
-      "esta e a que se faz por software."
+      "esta e a que se faz por software.",
+      "",
+      "DESLIGADO em 10/11/2026 (null). Os passos foram criados quando a",
+      "base parecia travar no meio do giro - e a causa era o deposito na",
+      "coordenada errada (ver _deposito_xy), nao corrente. Com o deposito",
+      "corrigido, o giro inteiro de uma vez completou nos ensaios, e os",
+      "passos so alongavam o ciclo e deixavam o movimento aos solavancos.",
+      "Volte a 8.0 se a base voltar a falhar no giro longo."
     ],
-    "passo_giro_graus": 8.0,
+    "passo_giro_graus": null,
     "_soltar_garra_no_giro": [
       "Solta TAMBEM a garra durante o giro, deixando a base como unico servo",
       "energizado. E o que sobra quando soltar ombro e cotovelo nao basta.",
@@ -493,10 +507,26 @@
       "CONSEQUENCIA PARA O limite_stall_amp: qualquer limite abaixo de ~0,6 A",
       "dispararia alivio em pega normal. Para ligar o alivio, falta medir um",
       "travamento de verdade - fechar a garra sobre algo que ela nao consiga",
-      "fechar, tipo o prato de 50 mm - e por o limite entre os dois."
+      "fechar, tipo o prato de 50 mm - e por o limite entre os dois.",
+      "",
+      "10/11/2026: abertura medida a 134 = 20 mm, exatamente o tronco. A reta",
+      "de 2,4 mm por grau acertou: 130 -> 30 mm, 134 -> 20 mm (2,5 mm/grau).",
+      "Ou seja, 134 era ENCOSTAR, sem aperto. Nos ensaios a peca ficou frouxa,",
+      "e o pedido foi fechar um pouco mais.",
+      "",
+      "136 = ~15 mm de abertura = ~5 mm de interferencia no tronco, 2,5 mm por",
+      "lado. Fica entre os dois medidos: corrente esperada entre os 0,27 A de",
+      "134 e os 0,39 A de 137. NAO VAI ALEM DE 137 sem medir corrente de novo:",
+      "cada grau a mais e 2,5 mm de empurrao a mais, e o objetivo da pega por",
+      "forma e justamente que o servo NAO segure por forca.",
+      "",
+      "Corrente de travamento: o teste de 10/11 bloqueou a garra com o DEDO,",
+      "e deu 0,08 a 0,18 A - MENOS que os 0,27 A de uma pega normal. Dedo cede,",
+      "entao aquilo nao foi travamento. Continua valendo: travamento de verdade",
+      "e sobre o prato de 50 mm, rigido."
     ],
     "garra_aberta_graus": 105,
-    "garra_fechada_graus": 134
+    "garra_fechada_graus": 136
   },
   "_elos_medidos": [
     "01/11/2026. Tirados do CAD oficial do MeArm V0.41 (STEP AP203 montado),",

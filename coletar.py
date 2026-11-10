@@ -56,6 +56,7 @@ from src.vision.estabilidade import (  # noqa: E402
 )
 from src.vision.deteccao import (  # noqa: E402
     ClasseDesconhecida,
+    caminho_modelo,
     carregar_preferencias,
     desenhar,
     melhor_bruta,
@@ -68,7 +69,6 @@ from src.vision.homografia import CalibracaoInvalida, Homografia  # noqa: E402
 
 CAMINHO_CONFIG = BASE_DIR / "config" / "braco.json"
 CAMINHO_HOMOGRAFIA = BASE_DIR / "config" / "homografia.json"
-CAMINHO_MODELO = BASE_DIR / "models" / "yolov8n.pt"
 
 # Depois de coletar, ignora detecções por este tempo. Sem isso o braço volta
 # do depósito, vê o objeto seguinte (ou a sombra do que acabou de sair) e sai
@@ -427,7 +427,13 @@ def main() -> int:
     # ---- modelo e câmera ---------------------------------------------
     from ultralytics import YOLO
 
-    modelo = YOLO(str(CAMINHO_MODELO))
+    try:
+        pesos = caminho_modelo(CAMINHO_CONFIG, BASE_DIR)
+    except FileNotFoundError as e:
+        print(f"ERRO: {e}")
+        return 1
+    print(f"Modelo: {pesos.relative_to(BASE_DIR) if pesos.is_relative_to(BASE_DIR) else pesos}")
+    modelo = YOLO(str(pesos))
     try:
         pedidos = [c.strip() for c in str(args.classe).split(",") if c.strip()]
         if not pedidos:

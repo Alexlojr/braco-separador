@@ -27,13 +27,16 @@ from src.vision.deteccao import (
     carregar_preferencias,
     resolver_classe,
     INTERVALO_DETECCAO,
+    caminho_modelo,
     desenhar,
     melhor_deteccao,
     para_rgb,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-CAMINHO_MODELO = BASE_DIR / "models" / "yolov8n.pt"
+# Os pesos saem do braco.json (visao.modelo), o mesmo que a coleta le:
+# painel e coleta tem de estar olhando pelo MESMO modelo.
+CAMINHO_MODELO = caminho_modelo(BASE_DIR / "config" / "braco.json", BASE_DIR)
 
 st.set_page_config(page_title="Detecção de Objetos", layout="wide")
 st.title("Detecção de Objetos (YOLO)")

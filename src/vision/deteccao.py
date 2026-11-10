@@ -95,6 +95,49 @@ def carregar_preferencias(caminho="config/braco.json"):
     )
 
 
+MODELO_PADRAO = "models/yolov8n.pt"
+
+
+def caminho_modelo(caminho_config, base_dir):
+    """
+    Caminho dos pesos do YOLO, da secao "visao" do braco.json.
+
+    Um lugar so, pelo mesmo motivo da classe_alvo: coleta, painel e
+    camera tinham cada um o seu caminho fixo no codigo, e trocar os pesos
+    base pelos treinados exigiria editar tres arquivos. Esquecer um deixa
+    o painel desenhando caixas de um modelo enquanto a coleta age por
+    outro - sem erro nenhum, so com comportamento que nao bate.
+
+    Caminho relativo e resolvido contra a RAIZ DO PROJETO, nao contra o
+    diretorio corrente: painel e coleta sao iniciados de lugares
+    diferentes.
+
+    Arquivo inexistente levanta FileNotFoundError aqui, com o caminho
+    resolvido na mensagem. Deixar passar para o Ultralytics e pior: com
+    nome de peso conhecido ele tenta BAIXAR da internet, e com caminho
+    errado devolve um erro que nao diz de onde o caminho veio.
+    """
+    import json
+    from pathlib import Path
+
+    try:
+        dados = json.loads(Path(caminho_config).read_text(encoding="utf-8"))
+        pedido = dados.get("visao", {}).get("modelo") or MODELO_PADRAO
+    except (OSError, ValueError):
+        pedido = MODELO_PADRAO
+
+    caminho = Path(pedido)
+    if not caminho.is_absolute():
+        caminho = Path(base_dir) / caminho
+    if not caminho.exists():
+        raise FileNotFoundError(
+            f"pesos do YOLO nao encontrados em {caminho} (visao.modelo = "
+            f"{pedido!r} no braco.json). Depois do treino eles ficam em "
+            f"runs/detect/train*/weights/best.pt."
+        )
+    return caminho
+
+
 # Roda o YOLO a cada N frames. Entre inferências o desenho reaproveita a
 # última caixa, o que mantém a imagem fluida sem custar inferência.
 INTERVALO_DETECCAO = 3

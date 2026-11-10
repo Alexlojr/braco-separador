@@ -25,14 +25,13 @@ from src.vision.deteccao import (  # noqa: E402
     INTERVALO_DETECCAO,
     carregar_preferencias,
     desenhar,
+    caminho_modelo,
     melhor_deteccao,
     resolver_classe,
 )
 
-CAMINHO_MODELO = Path(__file__).resolve().parent.parent / "models" / "yolov8n.pt"
-
-
 CAMINHO_CONFIG = Path(__file__).resolve().parent.parent / "config" / "braco.json"
+CAMINHO_MODELO = caminho_modelo(CAMINHO_CONFIG, CAMINHO_CONFIG.parent.parent)
 
 
 def main() -> int:
