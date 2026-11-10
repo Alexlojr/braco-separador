@@ -34,6 +34,9 @@ from typing import Callable, Iterator
 
 from .kinematics import Braco, CalibracaoBraco, PoseInalcancavel, pose_para_servos
 
+# Altura de cada degrau da descida ao lado da peça. Ver `planejar`.
+PASSO_DESCIDA_MM = 10.0
+
 
 @dataclass
 class ParametrosColeta:
@@ -466,9 +469,24 @@ class ControladorColeta:
         soltar = [f"DETACH {c}" for c in canais] if p.soltar_na_pega else []
         religar = [f"ATTACH {c}" for c in canais] if p.soltar_na_pega else []
 
+        # A descida vai em degraus, e não num SET só. Em cada pose o firmware
+        # recebe o ombro e o cotovelo um depois do outro, e o cotovelo não pode
+        # ir primeiro (viola o limite acoplado). Com o ombro adiantado, a ponta
+        # da garra anda PARA A FRENTE antes de descer: numa descida inteira de
+        # 70 a 20 mm, com a peça na frente da área, ela chegava ao centro da
+        # peça na altura do chapéu e empurrava a peça para trás (10/11/2026,
+        # na bancada). Em degraus de 10 mm esse desvio fica pequeno.
+        niveis = []
+        if z_alto is not None:
+            z = z_alto - PASSO_DESCIDA_MM
+            while z > z_entrada + 1e-6:
+                niveis.append(z)
+                z -= PASSO_DESCIDA_MM
+        niveis.append(z_entrada)
+        etapas += [Etapa(f"Descendo ao lado da peça, a {z:.0f} mm",
+                         self._cmds_pose(rx, ry, z, pose)) for z in niveis]
+
         etapas += [
-            Etapa(f"Descendo ao lado da peça, a {z_entrada:.0f} mm",
-                  self._cmds_pose(rx, ry, z_entrada, pose)),
             Etapa("Entrando no tronco, por baixo do chapéu",
                   self._cmds_pose(x, y, p.z_pega, pose)),
             Etapa("Fechando a garra", soltar + [self._cmd_garra(True)]),
