@@ -333,9 +333,31 @@
     "recuo_entrada_mm": 30.0,
     "recuo_minimo_mm": 25.0,
     "subida_entrada_mm": 5.0,
+    "_deposito_xy": [
+      "ONDE a peca e solta, em mm, na mesma convencao da area de coleta:",
+      "origem no eixo da base, +X direita, +Y frente.",
+      "",
+      "O angulo de base sai de atan2(y, x), e como a base tem offset 0 e",
+      "sentido +1, ele E o angulo de servo. Os depositos da bancada:",
+      "  esquerdo = servo 180 = (-r, 0)",
+      "  direito  = servo   0 = ( r, 0)",
+      "  area de coleta = servo 90 = (0, r)",
+      "",
+      "ESTAVA EM (-80, 100) ate 10/11/2026, que da servo 128,7. O braco ia ate",
+      "la certinho, com todos os passos confirmados, e isso passou horas sendo",
+      "lido como a base travando no meio do caminho: 128,7 fica a 45% do",
+      "percurso ate 180, sempre no mesmo lugar, sem zumbido e sem recusa.",
+      "Nenhuma hipotese de torque, corrente ou obstaculo explicava - porque",
+      "nao havia defeito nenhum, so uma coordenada que nunca foi conferida",
+      "contra a bancada.",
+      "",
+      "Raio util para a sequencia completa, nos dois depositos: 115 a 185 mm.",
+      "150 e o meio da faixa; MECA a distancia do eixo da base ate o centro da",
+      "placa e ponha o valor medido."
+    ],
     "deposito_xy": [
-      -80.0,
-      100.0
+      -150.0,
+      0.0
     ],
     "_pausa_garra": [
       "Pausa EXTRA depois das etapas de garra, somada a pausa_s.",
