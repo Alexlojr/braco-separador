@@ -162,6 +162,11 @@ def main() -> int:
                     help="imprime cada comando enviado e cada resposta do "
                          "firmware. Use quando o braco fizer algo que a "
                          "descricao da etapa nao explica")
+    ap.add_argument("--sem-soltar", action="store_true",
+                    help="forca soltar_na_pega, soltar_no_giro e "
+                         "soltar_garra_no_giro em false, sem editar o "
+                         "braco.json. Util para comparar com e sem DETACH na "
+                         "mesma maquina")
     ap.add_argument("--pausa", type=float, default=None,
                     help="pausa em segundos depois de cada etapa, sobrepondo "
                          "o pausa_s do braco.json. Sobe quando uma etapa "
@@ -312,6 +317,26 @@ def main() -> int:
         params_dict["deslocamento_radial"] = args.deslocamento
     if args.pausa is not None:
         params_dict["pausa_s"] = args.pausa
+    if args.sem_soltar:
+        for chave in ("soltar_na_pega", "soltar_no_giro", "soltar_garra_no_giro"):
+            params_dict[chave] = False
+
+    # O que vale AGORA, e nao o que esta escrito em algum arquivo. Editar o
+    # braco.json na maquina errada e perder a tarde achando que testou outra
+    # coisa e o tipo de engano que uma linha de saida evita.
+    print("Sequencia: "
+          + f"recuo {params_dict['recuo_entrada']:.0f} mm, "
+          + f"correcao radial {params_dict['deslocamento_radial']:.0f} mm, "
+          + (f"giro a {params_dict['raio_giro']:.0f} mm"
+             if params_dict.get("raio_giro") else "giro sem recolher")
+          + (f" em passos de {params_dict['passo_giro']:.0f} graus"
+             if params_dict.get("passo_giro") else " de uma vez"))
+    soltas = [nome for chave, nome in (
+        ("soltar_na_pega", "na pega"),
+        ("soltar_no_giro", "ombro+cotovelo no giro"),
+        ("soltar_garra_no_giro", "garra no giro"),
+    ) if params_dict.get(chave)]
+    print("DETACH: " + (", ".join(soltas) if soltas else "nenhum"))
     if params_dict.get("deslocamento_radial"):
         print(f"Correção radial: {params_dict['deslocamento_radial']:.0f} mm "
               f"(meia profundidade do apoio do objeto).")
