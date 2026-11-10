@@ -162,6 +162,12 @@ def main() -> int:
                     help="imprime cada comando enviado e cada resposta do "
                          "firmware. Use quando o braco fizer algo que a "
                          "descricao da etapa nao explica")
+    ap.add_argument("--deposito", default=None, metavar="X,Y",
+                    help="posicao do deposito em mm, sobrepondo o "
+                         "deposito_xy do braco.json. Mesma convencao da area "
+                         "de coleta: origem no eixo da base, +X direita, "
+                         "+Y frente. Ex: --deposito -150,0 poe o deposito a "
+                         "esquerda, com a base girando ate 180 graus")
     ap.add_argument("--sem-soltar", action="store_true",
                     help="forca soltar_na_pega, soltar_no_giro e "
                          "soltar_garra_no_giro em false, sem editar o "
@@ -317,6 +323,14 @@ def main() -> int:
         params_dict["deslocamento_radial"] = args.deslocamento
     if args.pausa is not None:
         params_dict["pausa_s"] = args.pausa
+    if args.deposito is not None:
+        try:
+            dx_cli, dy_cli = (float(v) for v in args.deposito.split(","))
+        except ValueError:
+            print(f"ERRO: --deposito {args.deposito!r} invalido. Use X,Y em "
+                  "mm, por exemplo -150,0")
+            return 1
+        params_dict["deposito"] = (dx_cli, dy_cli)
     if args.sem_soltar:
         for chave in ("soltar_na_pega", "soltar_no_giro", "soltar_garra_no_giro"):
             params_dict[chave] = False
@@ -331,6 +345,12 @@ def main() -> int:
              if params_dict.get("raio_giro") else "giro sem recolher")
           + (f" em passos de {params_dict['passo_giro']:.0f} graus"
              if params_dict.get("passo_giro") else " de uma vez"))
+    import math as _m
+    _dx, _dy = params_dict["deposito"]
+    print(f"Deposito: ({_dx:.0f}, {_dy:.0f}) mm, que e base "
+          f"{_m.degrees(_m.atan2(_dy, _dx)):.0f} graus e raio "
+          f"{_m.hypot(_dx, _dy):.0f} mm.")
+
     soltas = [nome for chave, nome in (
         ("soltar_na_pega", "na pega"),
         ("soltar_no_giro", "ombro+cotovelo no giro"),
