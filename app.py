@@ -23,6 +23,7 @@ from ultralytics import YOLO
 from src.vision.fonte import aplicar_rotacao
 from src.vision.quadro_publicado import ler as ler_publicado
 from src.telemetria import ler as ler_telemetria
+from src import processo_coleta
 from src.vision.deteccao import (
     ClasseDesconhecida,
     carregar_preferencias,
@@ -98,11 +99,68 @@ if "contagem" not in st.session_state:
 if "ultimo_objeto" not in st.session_state:
     st.session_state.ultimo_objeto = None
 
+if "camera_do_painel" not in st.session_state:
+    st.session_state.camera_do_painel = False
+
+
+def soltar_camera_do_painel():
+    """
+    Fecha a camera se foi o PAINEL que a abriu. Precisa acontecer antes de
+    lancar a coleta: um processo por vez consegue a camera, e o coletar.py
+    morreria com "Pipeline handler in use by another process".
+    """
+    if not st.session_state.camera_do_painel:
+        return
+    try:
+        cam = iniciar_camera()      # devolve a instancia em cache
+        cam.stop()
+        cam.close()
+    except Exception:
+        pass
+    iniciar_camera.clear()
+    st.session_state.camera_do_painel = False
+
+
+st.sidebar.markdown("### Câmera")
 if st.sidebar.button("Iniciar câmera"):
     st.session_state.rodando = True
 
 if st.sidebar.button("Parar"):
     st.session_state.rodando = False
+
+# ---------------------------------------------------------------- coleta
+# O painel lanca o MESMO coletar.py da linha de comando, como processo
+# separado, e para com Ctrl+C (ver src/processo_coleta.py).
+st.sidebar.markdown("### Coleta (braço)")
+classes_coleta = st.sidebar.text_input("Classes", value="peca,mouse")
+velocidade_coleta = st.sidebar.number_input("Velocidade (°/s)", min_value=23,
+                                            max_value=150, value=40, step=5)
+externa = (not processo_coleta.rodando()) and ler_publicado() is not None
+
+c_ini, c_par = st.sidebar.columns(2)
+if c_ini.button("Iniciar coleta", disabled=processo_coleta.rodando() or externa):
+    soltar_camera_do_painel()
+    processo_coleta.iniciar(BASE_DIR, ["--classe", classes_coleta.strip(),
+                                       "--velocidade", str(int(velocidade_coleta))])
+    st.session_state.rodando = True     # ja abre a visualizacao
+if c_par.button("Parar coleta", disabled=not processo_coleta.rodando()):
+    with st.spinner("Parando a coleta (Ctrl+C)..."):
+        processo_coleta.parar()
+
+if processo_coleta.rodando():
+    st.sidebar.success("Coleta rodando, iniciada pelo painel.")
+elif externa:
+    st.sidebar.info("Há uma coleta rodando pelo terminal. Pare-a por lá.")
+else:
+    codigo = processo_coleta.codigo_saida()
+    if codigo not in (None, 0):
+        st.sidebar.error(f"A coleta terminou com erro (código {codigo}).")
+    else:
+        st.sidebar.caption("Coleta parada.")
+    if codigo is not None:
+        with st.sidebar.expander("Saída da última coleta", expanded=codigo != 0):
+            st.code("\n".join(processo_coleta.ultimas_linhas(25)) or "(vazia)",
+                    language=None)
 
 col1, col2 = st.columns([2, 1])
 
@@ -175,11 +233,31 @@ while st.session_state.rodando:
         time.sleep(0.2)
         continue
 
+    # Coleta lancada pelo painel, mas ainda sem publicar (carregando o
+    # modelo, abrindo a serial): NAO abrir a camera aqui, senao o painel a
+    # toma antes do coletar.py e ele morre sem conseguir abri-la.
+    if processo_coleta.rodando():
+        camera_placeholder.info("Iniciando a coleta: carregando o modelo e "
+                                "conectando ao Arduino...")
+        log_placeholder.code("\n".join(processo_coleta.ultimas_linhas(12))
+                             or "(aguardando saída)", language=None)
+        servos_placeholder.empty()
+        time.sleep(0.5)
+        continue
+
     # Sem coleta rodando, nao ha servos nem log para mostrar.
     mostrar_telemetria(None)
+    codigo = processo_coleta.codigo_saida()
+    if codigo not in (None, 0):
+        # A coleta lancada pelo painel morreu (Arduino desconectado, por
+        # exemplo). Sem isto, o painel cairia na camera e pareceria normal.
+        with log_placeholder.container():
+            st.error(f"A coleta terminou com erro (código {codigo}). Últimas linhas:")
+            st.code("\n".join(processo_coleta.ultimas_linhas(12)), language=None)
 
     if picam2 is None:
         picam2 = iniciar_camera()
+        st.session_state.camera_do_painel = True
 
     frame = aplicar_rotacao(picam2.capture_array())
     frame_count += 1
