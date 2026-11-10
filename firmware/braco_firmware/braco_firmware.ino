@@ -158,7 +158,7 @@ float lim_max[NUM_SERVOS] = {180.0, 180.0, 160.0, 140.0};
 // 120/120 fica exatamente no limite acoplado calculado (s2 >= 285 - 1,5·s1
 // + 15 dá 120 para s1=120). Os 15° são a margem do modelo, então sobra
 // essa margem e não mais: não recue o ombro além de 120 sem medir.
-float pose_repouso[NUM_SERVOS] = {50.0, 120.0, 120.0, 135.0};
+float pose_repouso[NUM_SERVOS] = {50.0, 120.0, 120.0, 105.0};
 
 float atual[NUM_SERVOS];      // posição sendo escrita agora (segue a curva)
 float alvo[NUM_SERVOS];       // para onde o movimento está indo

@@ -99,6 +99,12 @@ class ParametrosColeta:
     # mais estendido, ou em minutos em vez de milissegundos, pode escorregar.
     # Por isso fica DESLIGADO por padrão e só vale para o intervalo curto em
     # que a garra age.
+    # Pose de onde o braço parte depois do HOME, em graus de servo, na ordem
+    # dos canais. Só serve para escolher a ordem dos SET da primeira pose do
+    # ciclo — ver `_ordem_segura`. `None` deixa a primeira sem referência,
+    # que é o pior caso e não quebra nada.
+    pose_repouso: list | None = None
+
     soltar_na_pega: bool = False
 
     # Raio em que o braço gira a base, carregando a peça. `None` gira onde
@@ -239,9 +245,52 @@ class ControladorColeta:
 
     # ---- montagem da sequência (sem efeito colateral) --------------------
 
-    def _cmds_pose(self, x: float, y: float, z: float) -> list[str]:
+    def _cmds_pose(self, x: float, y: float, z: float,
+                   anterior: dict | None = None) -> list[str]:
         canais = pose_para_servos(self.braco, self.calib, x, y, z)
-        return [f"SET {canal} {ang}" for canal, ang in sorted(canais.items())]
+        ordem = self._ordem_segura(canais, anterior)
+        if anterior is not None:
+            anterior.update(canais)
+        return [f"SET {canal} {canais[canal]}" for canal in ordem]
+
+    def _ordem_segura(self, canais: dict, anterior: dict | None) -> list[int]:
+        """
+        Em que ordem mandar os SET para o firmware não saturar o acoplamento.
+
+        O firmware avalia o limite acoplado contra o ALVO da outra junta
+        quando as duas estão no mesmo lote — mas o PRIMEIRO comando do lote
+        chega quando a outra ainda não entrou, e aí ele usa a posição dela.
+        Se o par (primeiro novo, outro ainda parado) violar o limite, o
+        firmware satura e o braço vai para outra pose, dizendo ACOPLADO.
+
+        Na bancada isso tirava até 7,6° do ombro nas poses de trânsito.
+
+        Quase sempre uma das duas ordens é segura, porque só uma das pontas
+        do "cotovelo" do caminho cai na região proibida. Então: testa as
+        duas, manda primeiro a que passa. Se nenhuma passar, a ordem não
+        resolve e o firmware satura de qualquer jeito — o que é o
+        comportamento correto, porque aí a transição é mesmo insegura.
+        """
+        ombro, cotovelo = self.calib.ombro.canal, self.calib.cotovelo.canal
+        base = self.calib.base.canal
+        padrao = sorted(canais)
+
+        if anterior is None or ombro not in canais or cotovelo not in canais:
+            return padrao
+        if ombro not in anterior or cotovelo not in anterior:
+            return padrao
+
+        def seguro(primeiro, parado):
+            """O par (novo do primeiro, antigo do parado) respeita o limite?"""
+            s1 = canais[ombro] if primeiro == ombro else anterior[ombro]
+            s2 = canais[cotovelo] if primeiro == cotovelo else anterior[cotovelo]
+            return self.calib.viola_acoplamento(s1, s2) is None
+
+        if seguro(ombro, cotovelo):
+            return [base, ombro, cotovelo] if base in canais else [ombro, cotovelo]
+        if seguro(cotovelo, ombro):
+            return [base, cotovelo, ombro] if base in canais else [cotovelo, ombro]
+        return padrao
 
     def _ponto_recuado(self, x: float, y: float, recuo: float):
         """
@@ -361,9 +410,18 @@ class ControladorColeta:
         # aqui, antes de tudo, faz o recuo e o sobrevoo saírem do ponto certo.
         x, y = self.ponto_de_pega(x, y)
 
+        # Acompanha a pose comandada ao longo da sequência, para `_cmds_pose`
+        # poder escolher a ordem dos SET. Parte da pose de repouso, que é
+        # onde o HOME deixou o braço no fim do ciclo anterior.
+        pose = ({i: ang for i, ang in enumerate(p.pose_repouso)}
+                if p.pose_repouso else {})
+
         # Valida o ponto de pega ANTES de procurar o recuo: se o alvo não é
         # alcançável, o erro tem que falar do alvo, e não do ponto de entrada.
-        cmds_pega = self._cmds_pose(x, y, p.z_pega)
+        # Sem `pose`, porque aqui é só validação — os comandos de verdade são
+        # gerados na ordem certa lá embaixo, quando a pose anterior já é
+        # conhecida.
+        self._cmds_pose(x, y, p.z_pega)
 
         z_entrada = p.z_pega - p.subida_entrada
         recuo = self._recuo_viavel(x, y, z_entrada)
@@ -375,7 +433,7 @@ class ControladorColeta:
         if z_alto is not None:
             etapas.append(Etapa(
                 f"Sobrevoando {recuo:.0f} mm antes do alvo, a {z_alto:.0f} mm",
-                self._cmds_pose(rx, ry, z_alto)))
+                self._cmds_pose(rx, ry, z_alto, pose)))
 
         # DETACH antes de a garra agir, ATTACH antes de o braço voltar a andar.
         # Os dois andam sempre em par: uma etapa que solta tem de ser seguida,
@@ -388,20 +446,21 @@ class ControladorColeta:
 
         etapas += [
             Etapa(f"Descendo ao lado da peça, a {z_entrada:.0f} mm",
-                  self._cmds_pose(rx, ry, z_entrada)),
-            Etapa("Entrando no tronco, por baixo do chapéu", cmds_pega),
+                  self._cmds_pose(rx, ry, z_entrada, pose)),
+            Etapa("Entrando no tronco, por baixo do chapéu",
+                  self._cmds_pose(x, y, p.z_pega, pose)),
             Etapa("Fechando a garra", soltar + [self._cmd_garra(True)]),
             Etapa("Subindo com o objeto",
-                  religar + self._cmds_pose(x, y, p.z_transporte)),
+                  religar + self._cmds_pose(x, y, p.z_transporte, pose)),
         ]
-        etapas += self._etapas_transporte(x, y, dx, dy)
+        etapas += self._etapas_transporte(x, y, dx, dy, pose)
         etapas += [
             Etapa("Soltando o objeto", soltar + [self._cmd_garra(False)]),
             Etapa("Voltando para HOME", religar + ["HOME"]),
         ]
         return etapas
 
-    def _etapas_transporte(self, x, y, dx, dy):
+    def _etapas_transporte(self, x, y, dx, dy, pose=None):
         """
         Do alvo até o depósito, recolhendo antes de girar a base.
 
@@ -416,13 +475,14 @@ class ControladorColeta:
         z = p.z_transporte
 
         if p.raio_giro is None:
-            return [Etapa("Levando ao depósito", self._cmds_pose(dx, dy, z))]
+            return [Etapa("Levando ao depósito",
+                          self._cmds_pose(dx, dy, z, pose))]
 
         perto_alvo = self._no_raio(x, y, p.raio_giro)
         perto_dep = self._no_raio(dx, dy, p.raio_giro)
 
-        cmds_recolhido = self._cmds_pose(*perto_alvo, z)
-        cmds_girado = self._cmds_pose(*perto_dep, z)
+        cmds_recolhido = self._cmds_pose(*perto_alvo, z, pose)
+        cmds_girado = self._cmds_pose(*perto_dep, z, pose)
 
         # Só o que MUDA. Recolhido e girado estão no mesmo raio e na mesma
         # altura, então ombro e cotovelo repetem o mesmo ângulo e os comandos
@@ -444,7 +504,7 @@ class ControladorColeta:
                         cmds_recolhido)]
         etapas += self._etapas_giro(cmds_recolhido, so_a_base, soltar)
         etapas.append(Etapa("Estendendo sobre o depósito",
-                            religar + self._cmds_pose(dx, dy, z)))
+                            religar + self._cmds_pose(dx, dy, z, pose)))
         return etapas
 
     def _etapas_giro(self, cmds_recolhido, so_a_base, soltar):

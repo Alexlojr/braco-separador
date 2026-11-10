@@ -964,6 +964,17 @@ def testa_acoplamento_sincronizado():
                     f"pegada_manual.py {float(angulo):.0f}"
                 )
 
+    # O braco.json tambem guarda uma copia, que o planejador usa para saber de
+    # onde o braco parte depois do HOME e com isso ordenar os SET. Copia que
+    # mente faz ele escolher a ordem errada e o firmware saturar de novo.
+    import json
+    cfg = json.loads((RAIZ / "config" / "braco.json").read_text(encoding="utf-8"))
+    do_json = cfg.get("pose_repouso_servos")
+    if do_json is None:
+        falhas.append("braco.json sem pose_repouso_servos")
+    elif [float(v) for v in do_json] != repouso:
+        falhas.append(f"pose de repouso: .ino {repouso} x braco.json {do_json}")
+
     return falhas
 
 

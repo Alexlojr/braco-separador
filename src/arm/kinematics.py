@@ -442,6 +442,10 @@ def carregar_config(caminho="config/braco.json"):
         "recuo_minimo": float(coleta.get("recuo_minimo_mm", 25.0)),
         "subida_entrada": float(coleta.get("subida_entrada_mm", 5.0)),
         "deslocamento_radial": float(coleta.get("deslocamento_radial_mm", 0.0)),
+        "pose_repouso": (
+            [float(v) for v in dados["pose_repouso_servos"]]
+            if dados.get("pose_repouso_servos") else None
+        ),
         "soltar_na_pega": bool(coleta.get("soltar_na_pega", False)),
         "soltar_no_giro": bool(coleta.get("soltar_no_giro", False)),
         "soltar_garra_no_giro": bool(coleta.get("soltar_garra_no_giro", False)),

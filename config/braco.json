@@ -51,6 +51,18 @@
     "classe_alvo": "mouse",
     "confianca_minima": 0.5
   },
+  "_pose_repouso_servos": [
+    "COPIA do pose_repouso compilado no braco_firmware.ino, em graus de",
+    "servo, na ordem base/ombro/cotovelo/garra. A fonte e o .ino, e o",
+    "testa_acoplamento_sincronizado() falha se os dois divergirem.",
+    "",
+    "Serve para o planejador saber de onde o braco parte depois do HOME, e",
+    "com isso escolher a ORDEM dos comandos SET de cada pose. O firmware",
+    "avalia o limite acoplado contra a posicao da outra junta quando ela",
+    "ainda nao entrou no lote, entao mandar ombro ou cotovelo primeiro muda",
+    "se ele satura ou nao - na bancada isso tirava ate 7,6 graus do ombro."
+  ],
+  "pose_repouso_servos": [50.0, 120.0, 120.0, 105.0],
   "acoplamento_cotovelo": "absoluto",
   "_acoplamento_cotovelo": [
     "'absoluto' = mecanismo de paralelogramo: os dois servomotores ficam",
