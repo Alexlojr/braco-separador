@@ -404,10 +404,21 @@ class MockArmSerial:
 
 
 if __name__ == "__main__":
-    arm = MockArmSerial()
-    print(f"Braço mock conectado em {arm.port} @ {arm.baudrate} baud")
+    # Procura o Arduino ANTES de subir. Sem isto o REPL rodava sempre na
+    # simulacao, e um teste de bancada feito aqui responderia bonito sem
+    # nenhum servo ter se mexido - que e o pior tipo de resultado falso.
+    arm = MockArmSerial(porta_arduino=detectar_porta_arduino())
+
+    if arm.braco_real:
+        print(f"ARDUINO em {arm.port} @ {arm.baudrate} baud.")
+        print("ATENCAO: abrir a serial REINICIA o Nano, e no boot ele assume")
+        print("         a pose de repouso de uma vez, sem suavizar.")
+    else:
+        print("SIMULACAO: nenhum Arduino encontrado, NADA vai se mexer.")
+        print("           Confira o cabo antes de tirar conclusao de bancada.")
     print("Servos:", ", ".join(f"{i}={nome}" for i, nome in SERVOS.items()))
-    print("Comandos: SET <id> <angulo> | GET <id> | GET ALL | HOME | sair\n")
+    print("Comandos: SET <id> <ang> | DETACH <id> | ATTACH <id> | AMP |")
+    print("          GET ALL | HOME | sair\n")
 
     try:
         while True:
