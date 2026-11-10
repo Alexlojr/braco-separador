@@ -443,6 +443,10 @@ def carregar_config(caminho="config/braco.json"):
         "subida_entrada": float(coleta.get("subida_entrada_mm", 5.0)),
         "deslocamento_radial": float(coleta.get("deslocamento_radial_mm", 0.0)),
         "soltar_na_pega": bool(coleta.get("soltar_na_pega", False)),
+        "raio_giro": (
+            None if coleta.get("raio_giro_mm", 130.0) is None
+            else float(coleta.get("raio_giro_mm", 130.0))
+        ),
         "deposito": tuple(coleta.get("deposito_xy", (-80.0, 100.0))),
         "pausa_s": float(coleta.get("pausa_s", 0.25)),
         "pausa_garra_s": float(coleta.get("pausa_garra_s", 0.5)),

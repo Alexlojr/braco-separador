@@ -219,8 +219,8 @@ for etapa in controlador.executar(leitura.x_mm, leitura.y_mm):
     if not serial.parado:
         cortadas.append((etapa.descricao, serial.pendente_s))
 
-checa(len(etapas) == 9, f"a coleta deveria ter 9 etapas, tem {len(etapas)}")
-checa(len(serial.linhas) == 19, f"deveriam sair 19 comandos, sairam {len(serial.linhas)}")
+checa(len(etapas) == 11, f"a coleta deveria ter 11 etapas, tem {len(etapas)}")
+checa(len(serial.linhas) == 25, f"deveriam sair 25 comandos, sairam {len(serial.linhas)}")
 checa(all(l.startswith("SET ") or l == "HOME" for l in serial.linhas),
       "todo comando deveria ser SET ou HOME")
 checa(serial.linhas[-1] == "HOME", "a sequencia deveria terminar em HOME")
@@ -467,6 +467,42 @@ c_presa = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
 todos = [cmd for e in c_presa.planejar(*alvo_mm) for cmd in e.comandos]
 checa(not [c for c in todos if c.startswith(("DETACH", "ATTACH"))],
       "soltar_na_pega desligado nao deveria gerar DETACH/ATTACH")
+
+
+# --- girar a base recolhido, e sozinha ------------------------------------
+#
+# Girar esticado e o pior caso do sistema: ombro no maior torque, base com a
+# maior inercia, tres juntas andando juntas e a garra segurando. No primeiro
+# ciclo real, em 09/11, a base travava no meio e a sequencia seguia soltando
+# a peca ali - o firmware conta o TEMPO do movimento, nao a posicao.
+#
+# Duas propriedades que fazem a correcao valer:
+#   1. na etapa do giro, SO a base se move;
+#   2. ela gira num raio menor que o do alvo (recolhida).
+etapas_t = controlador.planejar(*alvo_mm)
+giro = next(e for e in etapas_t if "irando a base" in e.descricao)
+recolhe = next(e for e in etapas_t if "ecolhendo" in e.descricao)
+
+ang_giro = _angulos(giro)
+ang_recolhe = _angulos(recolhe)
+
+moveu = [c for c in ang_giro
+         if c in ang_recolhe and abs(ang_giro[c] - ang_recolhe[c]) > 0.5]
+checa(moveu == [calib.base.canal],
+      f"no giro so a base (canal {calib.base.canal}) pode se mover, moveram {moveu}")
+
+r_recolhe = _math.hypot(*_ponto(ang_recolhe)[:2])
+r_alvo = _math.hypot(*_ponto(_angulos(
+    next(e for e in etapas_t if "tronco" in e.descricao)))[:2])
+checa(r_recolhe < r_alvo,
+      f"deveria recolher antes de girar: raio {r_recolhe:.0f} contra "
+      f"{r_alvo:.0f} do alvo")
+
+# com raio_giro None volta ao movimento unico, para poder comparar
+c_direto = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
+                             params=PC(**dict(base_params, raio_giro=None)))
+checa(not [e for e in c_direto.planejar(*alvo_mm) if "irando a base" in e.descricao],
+      "raio_giro None deveria voltar ao movimento unico ate o deposito")
 
 
 # alvo que nao aceita o recuo minimo e recusado, e a mensagem diz por que

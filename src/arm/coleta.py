@@ -100,6 +100,24 @@ class ParametrosColeta:
     # Por isso fica DESLIGADO por padrão e só vale para o intervalo curto em
     # que a garra age.
     soltar_na_pega: bool = False
+
+    # Raio em que o braço gira a base, carregando a peça. `None` gira onde
+    # estiver, que é o comportamento antigo.
+    #
+    # Girar esticado é o pior caso do sistema inteiro: o ombro está no maior
+    # torque e a base tem a maior inércia para acelerar, tudo isso com três
+    # juntas andando ao mesmo tempo e a garra segurando. No primeiro ciclo
+    # real, em 09/11/2026, a base travava no meio do caminho e a sequência
+    # seguia para soltar a peça ali mesmo — o firmware conta o tempo do
+    # movimento, não a posição, então um servo que não acompanha passa por
+    # movimento concluído.
+    #
+    # Recolher antes de girar tira os dois efeitos de uma vez, e é a mesma
+    # regra que o pegada_manual.py já recomendava para a operação manual.
+    # 130 mm deixa o ombro com ~79% do torque que ele teria a 165 mm, e está
+    # com folga dentro da faixa alcançável na altura de transporte (114 a
+    # 188 mm).
+    raio_giro: float | None = 130.0
     # (x, y) do depósito, em mm. Precisa cair dentro dos limites da base:
     # um ponto "atrás" do braço (y negativo com x≈0) exige base ≈ -90°, que
     # nenhum servo de 0-180° alcança. Mantenha o depósito à frente ou ao lado.
@@ -315,11 +333,48 @@ class ControladorColeta:
             Etapa("Fechando a garra", soltar + [self._cmd_garra(True)]),
             Etapa("Subindo com o objeto",
                   religar + self._cmds_pose(x, y, p.z_transporte)),
-            Etapa("Levando ao depósito", self._cmds_pose(dx, dy, p.z_transporte)),
+        ]
+        etapas += self._etapas_transporte(x, y, dx, dy)
+        etapas += [
             Etapa("Soltando o objeto", soltar + [self._cmd_garra(False)]),
             Etapa("Voltando para HOME", religar + ["HOME"]),
         ]
         return etapas
+
+    def _etapas_transporte(self, x, y, dx, dy):
+        """
+        Do alvo até o depósito, recolhendo antes de girar a base.
+
+        Três movimentos curtos em vez de um longo: recolhe no mesmo ângulo,
+        gira só a base, estende sobre o depósito. Cada um move menos juntas e
+        pede menos corrente de pico que o movimento único, que combinava giro
+        de base, mudança de altura e mudança de alcance ao mesmo tempo.
+
+        Com `raio_giro = None` volta ao movimento único.
+        """
+        p = self.params
+        z = p.z_transporte
+
+        if p.raio_giro is None:
+            return [Etapa("Levando ao depósito", self._cmds_pose(dx, dy, z))]
+
+        perto_alvo = self._no_raio(x, y, p.raio_giro)
+        perto_dep = self._no_raio(dx, dy, p.raio_giro)
+
+        return [
+            Etapa(f"Recolhendo para girar, a {p.raio_giro:.0f} mm",
+                  self._cmds_pose(*perto_alvo, z)),
+            Etapa("Girando a base para o depósito",
+                  self._cmds_pose(*perto_dep, z)),
+            Etapa("Estendendo sobre o depósito", self._cmds_pose(dx, dy, z)),
+        ]
+
+    def _no_raio(self, x: float, y: float, raio: float):
+        """O mesmo ângulo de base, no raio pedido."""
+        r = math.hypot(x, y)
+        if r <= 1e-6:
+            return 0.0, raio
+        return x * raio / r, y * raio / r
 
     def alcancavel(self, x: float, y: float) -> tuple[bool, str]:
         """Testa se dá para coletar em (x, y) sem mover nada."""
