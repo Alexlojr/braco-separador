@@ -730,6 +730,76 @@ def testa_limites_sincronizados():
     ]
 
 
+def testa_acoplamento_em_lote():
+    """
+    Modelo de limitaAcoplado(), com os numeros lidos do .ino.
+
+    O limite acoplado satura o angulo pedido quando a outra junta nao da
+    folga. A pergunta e CONTRA QUAL valor da outra junta ele compara, e a
+    resposta muda o resultado em dezenas de graus.
+
+    Medido em 09/11/2026: a sequencia mandava SET 1 160.9 e logo depois
+    SET 2 88.6. Comparando contra a posicao ATUAL do ombro, que ainda era
+    120, o minimo do cotovelo dava 120 e o 88.6 saturava ali - 31 graus de
+    erro, em toda etapa de aproximacao, com o braco indo para uma pose que
+    ninguem pediu. O log so denunciou porque a resposta diz " ACOPLADO".
+
+    Contra o ALVO do ombro vale, e nao e relaxamento: juntas no mesmo lote
+    interpolam juntas, a restricao e um semiplano, e semiplano e convexo -
+    se as duas pontas do segmento cabem, o segmento inteiro cabe. Fora do
+    lote nao vale, porque uma junta parada com a outra andando percorre uma
+    reta que pode cruzar o limite.
+    """
+    fonte = INO.read_text(encoding="utf-8")
+    A = float(re.search(r"ACOP_A\s*=\s*([\d.]+)", fonte).group(1))
+    B = float(re.search(r"ACOP_B\s*=\s*([\d.]+)", fonte).group(1))
+    M = float(re.search(r"ACOP_MARGEM\s*=\s*([\d.]+)", fonte).group(1))
+    lim_min = _extrai_vetor(fonte, "lim_min")
+    IDX_OMBRO, IDX_COTOVELO = 1, 2
+
+    def min_cotovelo(s1):
+        return max(A - B * s1 + M, lim_min[IDX_COTOVELO])
+
+    def ref(atual, alvo_, juntas):
+        return alvo_ if juntas else min(atual, alvo_)
+
+    falhas = []
+
+    # o caso da bancada: ombro indo para 160.9, cotovelo pedido em 88.6
+    no_lote = min_cotovelo(ref(120.0, 160.9, True))
+    fora = min_cotovelo(ref(120.0, 160.9, False))
+    if 88.6 < no_lote:
+        falhas.append(f"no mesmo lote, 88.6 ainda satura (minimo {no_lote:.1f})")
+    if 88.6 >= fora:
+        falhas.append("fora do lote, 88.6 deveria saturar e nao satura: o "
+                      "modelo do teste nao reproduz o caso que motivou a "
+                      "correcao")
+
+    # a convexidade, que e o que autoriza usar o alvo: amostra o segmento
+    for s1_i, s2_i, s1_f, s2_f in [(120.0, 132.2, 160.9, 88.6),
+                                   (120.0, 120.0, 180.0, 70.0),
+                                   (160.0, 90.0, 120.0, 130.0)]:
+        if s2_i < min_cotovelo(s1_i) or s2_f < min_cotovelo(s1_f):
+            continue            # ponta ja invalida, nao diz nada sobre o meio
+        for k in range(1, 20):
+            t = k / 20.0
+            s1 = s1_i + t * (s1_f - s1_i)
+            s2 = s2_i + t * (s2_f - s2_i)
+            if s2 < min_cotovelo(s1) - 1e-9:
+                falhas.append(
+                    f"o segmento ({s1_i:.0f},{s2_i:.0f})->({s1_f:.0f},{s2_f:.0f}) "
+                    f"sai do permitido em t={t:.2f}, logo usar o alvo NAO e "
+                    f"seguro e a correcao esta errada"
+                )
+                break
+
+    # e o .ino tem de estar usando o alvo quando as duas estao no mesmo lote
+    if "no_lote[outra]" not in fonte or "return alvo[outra]" not in fonte:
+        falhas.append("refAcoplada() nao usa o alvo da outra junta no lote")
+
+    return falhas
+
+
 def testa_impulso_garra():
     """
     Modelo da decisao de IMPULSO, com os numeros lidos do .ino.
@@ -919,6 +989,12 @@ def main():
     if not falhas_imp:
         print("impulso da garra: decide certo e nao se aninha")
 
+    falhas_lote = testa_acoplamento_em_lote()
+    for f in falhas_lote:
+        print(f"  FALHA acoplamento em lote: {f}")
+    if not falhas_lote:
+        print("limite acoplado usa o alvo no lote, e o segmento e convexo")
+
     falhas_sensor = testa_sensor()
     for f in falhas_sensor:
         print(f"  FALHA sensor: {f}")
@@ -928,7 +1004,7 @@ def main():
 
     total = (falhas + len(falhas_mov) + len(falhas_sensor)
              + len(falhas_demo) + len(falhas_limites) + len(falhas_acop)
-             + len(falhas_imp))
+             + len(falhas_imp) + len(falhas_lote))
     print("\nOK" if total == 0 else f"\n{total} falha(s)")
     return 1 if total else 0
 

@@ -113,6 +113,11 @@ class MockArmSerial:
         self._lock = threading.Lock()
         self._rx = deque()
         self._historico = deque(maxlen=200)
+        # Gancho para quem quer ver as linhas ao vivo. O historico tem
+        # tamanho limitado, entao quem acompanhava por indice dele parava de
+        # receber assim que ele enchia - e, pior, parecia que a serial tinha
+        # emudecido. Com o gancho nao ha indice para ficar para tras.
+        self.ao_registrar = None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop_fisica, daemon=True)
         self._thread.start()
@@ -340,6 +345,11 @@ class MockArmSerial:
 
     def _registra(self, direcao: str, linha: str):
         self._historico.append((time.strftime("%H:%M:%S"), direcao, linha))
+        if self.ao_registrar is not None:
+            try:
+                self.ao_registrar(direcao, linha)
+            except Exception:
+                pass   # diagnostico nunca derruba a operacao
 
     def _processa_comando(self, linha: str):
         self._registra("TX", linha)

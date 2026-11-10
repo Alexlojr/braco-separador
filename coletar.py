@@ -316,6 +316,33 @@ def main() -> int:
         print(f"Correção radial: {params_dict['deslocamento_radial']:.0f} mm "
               f"(meia profundidade do apoio do objeto).")
 
+    if args.eco and hasattr(serial, "ao_registrar"):
+        # BUSY aparece dezenas de vezes por etapa e afogaria o resto; conta e
+        # resume. O que interessa sao os OK/ERR e quanto cada etapa esperou.
+        #
+        # Pelo GANCHO, e nao lendo o historico: ele e um deque limitado a 200
+        # entradas, e quem acompanhava por indice parava de receber quando
+        # enchia. Pior: parecia que a serial tinha emudecido no meio da
+        # sequencia, e foi o que me fez diagnosticar errado em 09/11.
+        espera = {"n": 0}
+
+        def mostrar(direcao, linha):
+            if linha.startswith("BUSY"):
+                if linha.endswith("1"):
+                    espera["n"] += 1
+                elif espera["n"]:
+                    print(f"       <- BUSY 1 x{espera['n']}, depois 0")
+                    espera["n"] = 0
+                else:
+                    print("       <- BUSY 0")
+                return
+            if direcao == "RX":
+                print(f"       <- {linha}")
+            elif direcao == "ERRO":
+                print(f"       !! {linha}")
+
+        serial.ao_registrar = mostrar
+
     if args.eco:
         serial = SerialComEco(serial)
 
@@ -454,18 +481,7 @@ def main() -> int:
                 continue
 
             try:
-                vistas = len(serial.historico()) if (
-                    args.eco and hasattr(serial, "historico")) else 0
                 for etapa in controlador.executar(x_mm, y_mm):
-                    if args.eco and hasattr(serial, "historico"):
-                        hist = serial.historico()
-                        # (hora, direcao, linha) — e nao (direcao, linha)
-                        for _, direcao, linha_h in hist[vistas:]:
-                            if direcao == "RX":
-                                print(f"       <- {linha_h}")
-                            elif direcao == "ERRO":
-                                print(f"       !! {linha_h}")
-                        vistas = len(hist)
                     linha = f"  {etapa.descricao}"
                     # Depois de fechar, a corrente da garra é o dado que diz se
                     # a pega por encaixe está funcionando sem forçar o servo.

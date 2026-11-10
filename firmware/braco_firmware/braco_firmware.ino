@@ -398,14 +398,35 @@ float ombroMinimoPara(float s2) {
 // restritiva que ela assume durante o trajeto — o menor valor entre onde ela
 // esta e para onde esta indo. Usar so o alvo deixaria passar uma pose final
 // valida cujo caminho atravessa a zona de colisao.
+// A referência da outra junta: o alvo dela quando as duas vão andar JUNTAS,
+// o pior entre atual e alvo quando não vão.
+//
+// Esta distinção não é refinamento, é a diferença entre a pose planejada
+// acontecer ou não. Medido em 09/11/2026: a sequência mandava SET 1 160.9 e
+// logo em seguida SET 2 88.6; quando o segundo chegava, o ombro ainda estava
+// fisicamente em 120, e o mínimo do cotovelo para ombro 120 é 120. O cotovelo
+// saturava em 120 em vez de ir a 88.6 — 31° de diferença, com o braço indo
+// para uma pose que ninguém pediu, em toda etapa de aproximação.
+//
+// Usar o alvo é SEGURO quando as duas estão no mesmo lote, porque aí elas
+// interpolam juntas: a restrição `s2 >= A - B*s1 + M` é um semiplano, que é
+// convexo, então se as duas pontas do segmento cabem, o segmento inteiro
+// cabe. Fora do lote não vale — uma junta parada com a outra andando percorre
+// uma reta horizontal no plano (s1, s2), que pode cruzar o limite.
+float refAcoplada(uint8_t outra, unsigned long agora) {
+  bool juntas = no_lote[outra] && (agora - t_lote) <= JANELA_LOTE_MS;
+  if (juntas) return alvo[outra];
+  return atual[outra] < alvo[outra] ? atual[outra] : alvo[outra];
+}
+
+
 float limitaAcoplado(uint8_t id, float angulo, bool *apertou) {
+  unsigned long agora = millis();
   float minimo;
   if (id == IDX_COTOVELO) {
-    float s1 = atual[IDX_OMBRO] < alvo[IDX_OMBRO] ? atual[IDX_OMBRO] : alvo[IDX_OMBRO];
-    minimo = cotoveloMinimoPara(s1);
+    minimo = cotoveloMinimoPara(refAcoplada(IDX_OMBRO, agora));
   } else if (id == IDX_OMBRO) {
-    float s2 = atual[IDX_COTOVELO] < alvo[IDX_COTOVELO] ? atual[IDX_COTOVELO] : alvo[IDX_COTOVELO];
-    minimo = ombroMinimoPara(s2);
+    minimo = ombroMinimoPara(refAcoplada(IDX_COTOVELO, agora));
   } else {
     return angulo;
   }
