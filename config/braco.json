@@ -312,7 +312,22 @@
       "esta e a que se faz por software."
     ],
     "passo_giro_graus": 8.0,
-    "soltar_no_giro": false,
+    "_soltar_garra_no_giro": [
+      "Solta TAMBEM a garra durante o giro, deixando a base como unico servo",
+      "energizado. E o que sobra quando soltar ombro e cotovelo nao basta.",
+      "",
+      "Medido em 09/11/2026: a base percorre os 180 graus inteiros quando e",
+      "a unica consumindo, e trava na metade quando as outras tres seguram",
+      "junto. Nao e obstaculo nem limite mecanico - e a tensao que chega.",
+      "",
+      "Soltar a garra COM A PECA parece temerario e nao e: a retencao e por",
+      "fechamento de forma, com os pratos de 50 mm impedindo a peca de sair,",
+      "e o redutor do servo nao e retroacionavel, entao os dedos ficam onde",
+      "estao. Ainda assim e o ponto de maior risco da sequencia. Se a peca",
+      "cair durante o giro, e isto."
+    ],
+    "soltar_garra_no_giro": true,
+    "soltar_no_giro": true,
     "soltar_na_pega": false,
     "deslocamento_radial_mm": 25.0,
     "recuo_entrada_mm": 30.0,

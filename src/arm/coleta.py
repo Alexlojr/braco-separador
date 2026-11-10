@@ -134,6 +134,20 @@ class ParametrosColeta:
     # confiar: se o braço ceder durante o giro, desligue.
     soltar_no_giro: bool = False
 
+    # Solta TAMBÉM a garra durante o giro, deixando a base como único servo
+    # energizado. É o que sobra quando soltar ombro e cotovelo não basta.
+    #
+    # Medido em 09/11/2026: a base percorre os 180° inteiros quando é a única
+    # a consumir, e trava na metade quando as outras três seguram junto. Não
+    # é obstáculo nem limite mecânico — é a tensão que chega nela.
+    #
+    # Soltar a garra COM A PEÇA parece temerário e não é, por dois motivos:
+    # a retenção é por fechamento de forma, com os pratos de 50 mm impedindo
+    # a peça de sair, e o redutor do servo não é retroacionável, então os
+    # dedos ficam onde estão. Ainda assim é o ponto de maior risco da
+    # sequência: se a peça cair durante o giro, é isto.
+    soltar_garra_no_giro: bool = False
+
     # Fatia o giro da base em passos de no maximo tantos graus. `None` gira
     # de uma vez.
     #
@@ -399,9 +413,16 @@ class ControladorColeta:
         # deles seriam ruído — e, com eles soltos, comando para junta sem PWM.
         so_a_base = [c for c in cmds_girado if c not in cmds_recolhido]
 
-        braco_sem_pwm = [self.calib.ombro.canal, self.calib.cotovelo.canal]
-        soltar = [f"DETACH {c}" for c in braco_sem_pwm] if p.soltar_no_giro else []
-        religar = [f"ATTACH {c}" for c in braco_sem_pwm] if p.soltar_no_giro else []
+        # A base nunca entra: é ela que gira. Soltar e religar a base seria
+        # perder e recuperar a referência de posição dela sem ganhar nada.
+        sem_pwm = []
+        if p.soltar_no_giro:
+            sem_pwm += [self.calib.ombro.canal, self.calib.cotovelo.canal]
+        if p.soltar_garra_no_giro:
+            sem_pwm.append(self.calib.garra.canal)
+
+        soltar = [f"DETACH {c}" for c in sem_pwm]
+        religar = [f"ATTACH {c}" for c in sem_pwm]
 
         etapas = [Etapa(f"Recolhendo para girar, a {p.raio_giro:.0f} mm",
                         cmds_recolhido)]

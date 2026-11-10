@@ -444,6 +444,7 @@ def carregar_config(caminho="config/braco.json"):
         "deslocamento_radial": float(coleta.get("deslocamento_radial_mm", 0.0)),
         "soltar_na_pega": bool(coleta.get("soltar_na_pega", False)),
         "soltar_no_giro": bool(coleta.get("soltar_no_giro", False)),
+        "soltar_garra_no_giro": bool(coleta.get("soltar_garra_no_giro", False)),
         "passo_giro": (
             None if coleta.get("passo_giro_graus") is None
             else float(coleta["passo_giro_graus"])

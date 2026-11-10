@@ -223,9 +223,10 @@ checa(len(etapas) == 15, f"a coleta deveria ter 15 etapas, tem {len(etapas)}")
 # 23 e nao 25: a etapa do giro manda SO a base. Recolhido e girado estao no
 # mesmo raio e na mesma altura, entao ombro e cotovelo repetiriam o proprio
 # angulo - e com soltar_no_giro seriam comando para junta sem PWM.
-checa(len(serial.linhas) == 27, f"deveriam sair 27 comandos, sairam {len(serial.linhas)}")
-checa(all(l.startswith("SET ") or l == "HOME" for l in serial.linhas),
-      "todo comando deveria ser SET ou HOME")
+checa(len(serial.linhas) == 33, f"deveriam sair 33 comandos, sairam {len(serial.linhas)}")
+checa(all(l.startswith(("SET ", "DETACH ", "ATTACH ")) or l == "HOME"
+          for l in serial.linhas),
+      "todo comando deveria ser SET, DETACH, ATTACH ou HOME")
 checa(serial.linhas[-1] == "HOME", "a sequencia deveria terminar em HOME")
 
 # Nenhuma etapa pode comecar com a anterior ainda em movimento.
@@ -466,7 +467,9 @@ checa(all(ligado.values()),
 
 # desligado (o padrao) nao gera nenhum dos dois
 c_presa = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
-                            params=PC(**dict(base_params, soltar_na_pega=False)))
+                            params=PC(**dict(base_params, soltar_na_pega=False,
+                                             soltar_no_giro=False,
+                                             soltar_garra_no_giro=False)))
 todos = [cmd for e in c_presa.planejar(*alvo_mm) for cmd in e.comandos]
 checa(not [c for c in todos if c.startswith(("DETACH", "ATTACH"))],
       "soltar_na_pega desligado nao deveria gerar DETACH/ATTACH")
@@ -499,15 +502,56 @@ checa(list(ang_giro) == [calib.base.canal],
 
 # com soltar_no_giro, ombro e cotovelo saem do PWM e voltam depois - e a
 # garra NUNCA sai, porque ela esta segurando a peca
+# o False e EXPLICITO: base_params vem do braco.json de verdade, onde soltar
+# a garra esta ligado, e herdar dali faria este caso testar o outro
 c_giro = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
-                           params=PC(**dict(base_params, soltar_no_giro=True)))
+                           params=PC(**dict(base_params, soltar_no_giro=True,
+                                            soltar_garra_no_giro=False)))
 et_giro = c_giro.planejar(*alvo_mm)
 cmds_giro = next(e for e in et_giro if "irando a base" in e.descricao).comandos
 soltos = {int(c.split()[1]) for c in cmds_giro if c.startswith("DETACH")}
 checa(soltos == {calib.ombro.canal, calib.cotovelo.canal},
-      f"no giro deveriam sair do PWM ombro e cotovelo, sairam {soltos}")
-checa(calib.garra.canal not in soltos, "a garra NAO pode ser solta: ela segura a peca")
-checa(calib.base.canal not in soltos, "a base NAO pode ser solta: ela e quem gira")
+      f"so com soltar_no_giro deveriam sair ombro e cotovelo, sairam {soltos}")
+
+# a BASE nunca sai do PWM, em configuracao nenhuma: e ela que gira, e soltar
+# e religar so perderia a referencia de posicao dela
+for extra in ({}, {"soltar_garra_no_giro": True}):
+    c_x = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
+                            params=PC(**dict(base_params, soltar_no_giro=True, **extra)))
+    for e in c_x.planejar(*alvo_mm):
+        for cmd in e.comandos:
+            if cmd == f"DETACH {calib.base.canal}":
+                checa(False, f"a base saiu do PWM em {e.descricao!r}")
+
+# com soltar_garra_no_giro a garra TAMBEM sai, deixando a base sozinha. Em
+# 09/11 a base percorreu os 180 graus inteiros sendo a unica a consumir e
+# travou na metade com as outras tres segurando junto. A peca nao cai porque
+# a retencao e por forma e o redutor nao e retroacionavel - mas e o ponto de
+# maior risco da sequencia, e por isso tem teste proprio.
+c_tudo = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
+                           params=PC(**dict(base_params, soltar_no_giro=True,
+                                            soltar_garra_no_giro=True)))
+et_tudo = c_tudo.planejar(*alvo_mm)
+cmds_tudo = next(e for e in et_tudo if "irando a base" in e.descricao).comandos
+soltos_tudo = {int(c.split()[1]) for c in cmds_tudo if c.startswith("DETACH")}
+checa(soltos_tudo == {calib.ombro.canal, calib.cotovelo.canal, calib.garra.canal},
+      f"com soltar_garra_no_giro deveriam sair as tres, sairam {soltos_tudo}")
+
+religados_tudo = {int(c.split()[1]) for e in et_tudo for c in e.comandos
+                  if c.startswith("ATTACH")}
+checa(soltos_tudo <= religados_tudo,
+      f"soltou {soltos_tudo} e so religou {religados_tudo}")
+
+# e a garra so pode voltar a receber SET depois de religada
+ligada = True
+for e in et_tudo:
+    for cmd in e.comandos:
+        if cmd == f"DETACH {calib.garra.canal}":
+            ligada = False
+        elif cmd == f"ATTACH {calib.garra.canal}":
+            ligada = True
+        elif cmd.startswith(f"SET {calib.garra.canal} "):
+            checa(ligada, f"SET na garra com ela solta, em {e.descricao!r}")
 
 religados = {int(c.split()[1]) for e in et_giro for c in e.comandos
              if c.startswith("ATTACH")}
