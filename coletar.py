@@ -455,7 +455,8 @@ def main() -> int:
                 for etapa in controlador.executar(x_mm, y_mm):
                     if args.eco and hasattr(serial, "historico"):
                         hist = serial.historico()
-                        for direcao, linha_h in hist[vistas:]:
+                        # (hora, direcao, linha) — e nao (direcao, linha)
+                        for _, direcao, linha_h in hist[vistas:]:
                             if direcao == "RX":
                                 print(f"       <- {linha_h}")
                         vistas = len(hist)
