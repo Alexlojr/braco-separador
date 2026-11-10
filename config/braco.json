@@ -274,7 +274,23 @@
       -80.0,
       100.0
     ],
+    "_pausa_garra": [
+      "Pausa EXTRA depois das etapas de garra, somada a pausa_s.",
+      "",
+      "A garra nao tem realimentacao: o firmware ESTIMA quanto ela leva",
+      "para chegar, por VEL_MECANICA_GARRA. Estimativa otimista faz o",
+      "aguardar_parada devolver cedo e a etapa seguinte comecar com a",
+      "garra no meio do curso. No primeiro ciclo real, em 09/11/2026, o",
+      "braco subiu e a garra foi terminando de fechar durante a subida.",
+      "",
+      "A correcao de fundo e o VEL_MECANICA_GARRA do firmware; esta pausa",
+      "e a margem que nao exige recompilar. Ela tambem absorve algo que",
+      "nenhuma constante absorve: a garra fecha mais devagar quando o",
+      "braco esta estendido, porque os outros servos segurando derrubam a",
+      "tensao que chega nela."
+    ],
     "pausa_s": 0.25,
+    "pausa_garra_s": 0.5,
     "_garra": [
       "Angulos de servo da garra, em GRAUS. null usa o minimo/maximo da junta.",
       "Preencha os dois: qual extremo fecha depende de como a garra foi montada,",

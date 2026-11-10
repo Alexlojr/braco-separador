@@ -188,9 +188,22 @@ const float VEL_GARRA_MAX = 1000.0;
 
 // Escrever o pulso de uma vez NÃO significa que o servo chegou: ele leva o
 // tempo mecânico dele, e o BUSY precisa dizer 1 nesse intervalo. Senão o lado
-// Python manda a pose seguinte com a garra a meio curso, que foi o defeito do
-// intervalo fixo de 0,6 s. Estimativa conservadora de SG90 com carga.
-const float VEL_MECANICA_GARRA = 300.0;   // graus/s, para estimar o BUSY
+// Python manda a pose seguinte com a garra a meio curso.
+//
+// 300 °/s era folha de dados, e estava MUITO otimista. No primeiro ciclo real,
+// em 09/11/2026, a garra foi fechando durante a subida do braço e só terminou
+// no fim do curso dele — ou seja, os 29° do fechamento levaram perto de um
+// segundo, e não os 97 ms que 300 °/s previam.
+//
+// O motivo provável não é o servo: é a tensão. A garra fecha com os outros
+// três servos segurando o braço estendido, e a queda nos jumpers tira dela
+// justamente o torque de que precisa. Com DETACH nos outros, deve subir.
+//
+// 60 °/s é conservador de propósito. Errar para LENTO custa meio segundo de
+// ciclo; errar para rápido faz o braço subir com a peça a meio aperto, que
+// derruba a peça. Para ajustar: cronometre SET 3 105 -> SET 3 134 com o braço
+// estendido e energizado, e divida os 29° pelo tempo.
+const float VEL_MECANICA_GARRA = 60.0;    // graus/s, para estimar o BUSY
 const unsigned long GARRA_ASSENTA_MIN_MS = 60;
 unsigned long t_garra_fim = 0;            // ate quando o BUSY conta a garra
 

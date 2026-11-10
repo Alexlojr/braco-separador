@@ -445,6 +445,7 @@ def carregar_config(caminho="config/braco.json"):
         "soltar_na_pega": bool(coleta.get("soltar_na_pega", False)),
         "deposito": tuple(coleta.get("deposito_xy", (-80.0, 100.0))),
         "pausa_s": float(coleta.get("pausa_s", 0.25)),
+        "pausa_garra_s": float(coleta.get("pausa_garra_s", 0.5)),
         # None deixa a coleta cair no mínimo/máximo da junta. Explícito é
         # melhor: qual extremo fecha a garra depende da montagem mecânica.
         "garra_aberta": (

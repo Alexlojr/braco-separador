@@ -109,6 +109,20 @@ class ParametrosColeta:
     # serial, que pergunta ao firmware quando ele de fato parou.
     pausa_s: float = 0.25
 
+    # Pausa EXTRA depois das etapas de garra, somada à `pausa_s`.
+    #
+    # O firmware estima quanto a garra leva para chegar, porque ela não tem
+    # realimentação: ninguém sabe onde ela está, só para onde foi mandada.
+    # Se a estimativa for otimista, o `aguardar_parada` devolve cedo e a etapa
+    # seguinte começa com a garra no meio do curso — foi o que aconteceu no
+    # primeiro ciclo real, em 09/11: o braço subiu e a garra foi terminando de
+    # fechar durante a subida.
+    #
+    # A correção de fundo é o VEL_MECANICA_GARRA do firmware. Esta pausa é a
+    # margem que não exige recompilar, e que absorve a variação de velocidade
+    # da garra com a tensão disponível — que muda conforme a pose do braço.
+    pausa_garra_s: float = 0.5
+
     # Ângulos de servo da garra aberta e fechada. `None` usa o mínimo e o
     # máximo da junta, respectivamente.
     #
@@ -364,7 +378,18 @@ class ControladorColeta:
             # para no ângulo, mas a estrutura de acrílico ainda oscila um
             # pouco. Vale principalmente antes de fechar a garra.
             time.sleep(self.params.pausa_s)
+
+            # A garra ganha um tempo a mais, porque o fim do movimento dela é
+            # estimado e não medido. Ver `pausa_garra_s`.
+            if self._mexe_a_garra(etapa):
+                time.sleep(self.params.pausa_garra_s)
+
             yield etapa
+
+    def _mexe_a_garra(self, etapa) -> bool:
+        """Esta etapa manda algum SET no canal da garra?"""
+        prefixo = f"SET {self.calib.garra.canal} "
+        return any(cmd.startswith(prefixo) for cmd in etapa.comandos)
 
     # ---- entrada vinda da visão -----------------------------------------
 
