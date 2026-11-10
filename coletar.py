@@ -34,6 +34,7 @@ placeholder é como ele quebra engrenagem.
 """
 
 import argparse
+import statistics
 import sys
 import time
 from pathlib import Path
@@ -73,23 +74,43 @@ CAMINHO_MODELO = BASE_DIR / "models" / "yolov8n.pt"
 PAUSA_APOS_COLETA_S = 2.0
 
 
-class SerialComEco:
+class SerialInstrumentada:
     """
-    Repassa tudo para a serial de verdade, imprimindo o que passa.
+    Repassa tudo para a serial de verdade, marcando o instante do primeiro
+    comando de posicao e, se pedido, imprimindo o que passa.
 
-    Existe porque em modo real so as descricoes das etapas apareciam, e as
-    descricoes sao texto que EU escrevi: elas dizem o que o codigo pretendia,
-    nao o que foi enviado. Quando o braco faz algo que a descricao nao
-    explica, a primeira duvida vira "sera que o codigo certo esta rodando?" —
-    e sem ver os comandos nao da para responder.
+    O eco existe porque em modo real so as descricoes das etapas apareciam, e
+    as descricoes sao texto que EU escrevi: elas dizem o que o codigo
+    pretendia, nao o que foi enviado. Quando o braco faz algo que a descricao
+    nao explica, a primeira duvida vira "sera que o codigo certo esta
+    rodando?" — e sem ver os comandos nao da para responder.
+
+    A marca de tempo fica AQUI, dentro do write, e nao em volta da chamada de
+    `executar`: a latencia definida na secao 5.1 do relatorio termina na
+    emissao do primeiro comando de posicao na serial, e medir na borda de
+    `executar` incluiria o planejamento da sequencia inteira, que acontece
+    antes de qualquer byte sair.
+
+    So `SET` conta. `SPEED`, `DETACH` e `ATTACH` nao sao comandos de posicao,
+    e o primeiro SET da sequencia e a abertura da garra.
     """
 
-    def __init__(self, alvo):
+    def __init__(self, alvo, eco: bool = False):
         self._alvo = alvo
+        self._eco = eco
+        self.t_primeiro_comando = None
+
+    def armar_marco(self):
+        """Esquece a marca da sequencia anterior."""
+        self.t_primeiro_comando = None
 
     def write(self, dados: bytes) -> int:
         linha = dados.decode("utf-8", errors="ignore").strip()
-        if linha:
+        # Antes do write, nao depois: interessa quando o comando foi emitido,
+        # nao quando o driver devolveu o controle.
+        if self.t_primeiro_comando is None and linha.startswith("SET"):
+            self.t_primeiro_comando = time.monotonic()
+        if self._eco and linha:
             print(f"    -> {linha}")
         return self._alvo.write(dados)
 
@@ -388,8 +409,9 @@ def main() -> int:
 
         serial.ao_registrar = mostrar
 
-    if args.eco:
-        serial = SerialComEco(serial)
+    # Sempre embrulha: a marca de tempo do primeiro comando e medicao, nao
+    # depuracao, e precisa valer tambem na corrida que vai para o relatorio.
+    serial = SerialInstrumentada(serial, eco=args.eco)
 
     controlador = ControladorColeta(
         serial, braco=braco, calib=calib, params=ParametrosColeta(**params_dict)
@@ -425,15 +447,30 @@ def main() -> int:
     taxa_relatada = False
     t_ultimo_aviso = 0.0
 
+    # Latencia, na definicao da secao 5.1 do relatorio: do quadro que fecha
+    # o portao ate o primeiro SET. Guardada por ciclo para sair mediana no
+    # fim. O tempo de resposta, que inclui a espera do portao, vai separado:
+    # ele depende da janela e da taxa de inferencia, nao do processamento.
+    latencias_ms = []
+    inferencia_ms = []
+    respostas_s = []
+    t_inferencia = None
+    t_primeira_deteccao = None
+
     try:
         while True:
             frame = capturar()
+            # Imediatamente apos a leitura do quadro, como a definicao de
+            # latencia manda: o tempo da inferencia e percepcao e tem de
+            # ficar DENTRO do intervalo medido.
+            t_quadro = time.monotonic()
 
-            if time.monotonic() - ultima_coleta < PAUSA_APOS_COLETA_S:
+            if t_quadro - ultima_coleta < PAUSA_APOS_COLETA_S:
                 continue
 
             resultado = modelo(frame, classes=[classe_alvo],
                                imgsz=args.imgsz, conf=0.10, verbose=False)[0]
+            t_inferencia = time.monotonic()
 
             # O `conf` da chamada fica BAIXO de propósito: o limiar que decide
             # é o `args.confianca`, aplicado abaixo. Deixar o modelo devolver
@@ -486,6 +523,12 @@ def main() -> int:
 
             leitura = portao.observar(*deteccao.caixa)
 
+            if leitura.amostras == 1:
+                # Primeiro quadro da janela que vai produzir a coordenada.
+                # A diferenca entre este instante e o do quadro que fecha
+                # o portao e a espera do portao.
+                t_primeira_deteccao = t_quadro
+
             if not leitura.estavel:
                 print(f"  {deteccao.rotulo} — {leitura.motivo}")
                 # Primeira amostra da janela: confere alcance já, mesmo com a
@@ -526,6 +569,7 @@ def main() -> int:
                 continue
 
             try:
+                serial.armar_marco()
                 for etapa in controlador.executar(x_mm, y_mm):
                     linha = f"  {etapa.descricao}"
                     # Depois de fechar, a corrente da garra é o dado que diz se
@@ -539,6 +583,17 @@ def main() -> int:
                     print(linha)
                 # Chegou ao fim sem exceção: foi uma coleta de verdade.
                 coletados += 1
+                t_cmd = serial.t_primeiro_comando
+                if t_cmd is not None and t_inferencia is not None:
+                    lat = (t_cmd - t_quadro) * 1000.0
+                    inf = (t_inferencia - t_quadro) * 1000.0
+                    latencias_ms.append(lat)
+                    inferencia_ms.append(inf)
+                    if t_primeira_deteccao is not None:
+                        respostas_s.append(t_cmd - t_primeira_deteccao)
+                    print(f"  latência da percepção: {lat:.0f} ms — "
+                          f"{inf:.0f} ms de inferência e {lat - inf:.1f} ms "
+                          f"de conversão, cinemática e serialização")
                 print(f"  concluída ({coletados} no total)\n")
             except SincroniaPerdida as e:
                 print(f"\n  COLETA INTERROMPIDA: {e}")
@@ -567,6 +622,22 @@ def main() -> int:
         print(resumo + ".")
 
     finally:
+        if latencias_ms:
+            print(f"\nLatência da percepção, em {len(latencias_ms)} "
+                  f"ciclo(s): mediana "
+                  f"{statistics.median(latencias_ms):.0f} ms "
+                  f"(mínimo {min(latencias_ms):.0f}, "
+                  f"máximo {max(latencias_ms):.0f}).")
+            print(f"  Inferência do YOLO: mediana "
+                  f"{statistics.median(inferencia_ms):.0f} ms. O resto da "
+                  f"cadeia — homografia, cinemática e serialização — "
+                  f"responde pela diferença.")
+            if respostas_s:
+                print(f"  Tempo de resposta, do primeiro quadro com "
+                      f"detecção ao primeiro comando: mediana "
+                      f"{statistics.median(respostas_s):.1f} s. Inclui a "
+                      f"espera do portão, que depende da janela e da taxa "
+                      f"de inferência.")
         fechar_camera()
         # Apaga a publicação: imagem antiga parada no painel parece ao vivo,
         # que é pior do que painel sem imagem.
