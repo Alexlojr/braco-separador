@@ -246,23 +246,16 @@ capítulo de resultados.
 
 ## O que ainda está em aberto
 
-**O ângulo de FECHAMENTO não foi casado com o tronco.** A peça tem tronco de
-20 mm, e `garra_fechada_graus` está em 140, que é o fim de curso. Se em 140 a
-abertura for menor que 20 mm, a garra encosta no tronco antes de chegar lá e o
-servo passa o resto do movimento empurrando contra a peça — aquece e puxa
-corrente sem ganhar aperto nenhum, porque a retenção aqui é por encaixe.
+**Fechamento em 137, medido com a peça.** Era 140, que é o fim de curso e
+ficaria além do tronco de 20 mm. Confirme no primeiro ciclo real olhando o
+`AMP` que o `coletar.py` imprime na etapa de fechamento: corrente alta com a
+garra **parada** quer dizer que o servo está empurrando a peça, e aí o ângulo
+desce alguns graus. Corrente baixa com a peça retida é o alvo.
 
-Meça a abertura em alguns ângulos e ache onde ela dá ~20 mm:
-
-```
-SET 3 125
-SET 3 130
-SET 3 135
-```
-
-O `garra_fechada_graus` deve ser esse ângulo mais uns poucos graus, não o 140.
-É a mesma lógica do 105 na abertura: fim de curso é reserva, não posição de
-trabalho.
+**`soltar_na_pega` está em `false`.** Ligando no `braco.json`, a sequência corta
+o PWM da base, ombro e cotovelo enquanto a garra age, e religa antes de o braço
+voltar a andar. Vale testar com a peça: é a medida mais direta contra a queda
+de tensão nos jumpers, e o ensaio de 09/11 mostrou que o braço não cai solto.
 
 **A abertura da garra — RESOLVIDO em 08/11/2026.** Em `SET 3 100` as pinças
 ficam retas, com ~100 mm de ponta a ponta. A peça tem extremidades de 50 mm,

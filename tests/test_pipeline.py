@@ -421,6 +421,54 @@ checa(abs(_math.hypot(ponto_entrada[0], ponto_entrada[1]) - r_corr) < 1.0,
       f"{_math.hypot(ponto_entrada[0], ponto_entrada[1]):.1f}")
 
 
+# --- soltar as juntas enquanto a garra age -------------------------------
+#
+# Com soltar_na_pega, o PWM da base, ombro e cotovelo e cortado enquanto a
+# garra abre ou fecha, para ela ter a fonte inteira. Medido em 09/11 que o
+# braco nao cai solto: quem segura e o atrito do redutor.
+#
+# Duas invariantes, e quebrar qualquer uma derruba o braco no meio da
+# sequencia com a peca na garra:
+#   1. nenhuma junta do braco pode receber SET enquanto esta solta;
+#   2. a sequencia nao pode TERMINAR com alguma junta solta.
+p_solta = dict(base_params, soltar_na_pega=True)
+c_solta = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_solta))
+
+canais_braco = {calib.base.canal, calib.ombro.canal, calib.cotovelo.canal}
+ligado = {c: True for c in canais_braco}
+viu_detach = False
+
+for etapa in c_solta.planejar(*alvo_mm):
+    for cmd in etapa.comandos:
+        partes = cmd.split()
+        if partes[0] == "DETACH":
+            ligado[int(partes[1])] = False
+            viu_detach = True
+        elif partes[0] == "ATTACH":
+            ligado[int(partes[1])] = True
+        elif partes[0] == "SET":
+            canal = int(partes[1])
+            if canal in canais_braco and not ligado[canal]:
+                checa(False, f"SET no canal {canal} com ele solto, na etapa "
+                             f"{etapa.descricao!r}")
+        elif partes[0] == "HOME":
+            # HOME move TODAS as juntas: nenhuma pode estar solta aqui
+            soltas = [c for c, lig in ligado.items() if not lig]
+            checa(not soltas, f"HOME com os canais {soltas} soltos")
+
+checa(viu_detach, "soltar_na_pega ligado nao gerou DETACH nenhum")
+checa(all(ligado.values()),
+      f"a sequencia terminou com juntas soltas: "
+      f"{[c for c, lig in ligado.items() if not lig]}")
+
+# desligado (o padrao) nao gera nenhum dos dois
+c_presa = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
+                            params=PC(**dict(base_params, soltar_na_pega=False)))
+todos = [cmd for e in c_presa.planejar(*alvo_mm) for cmd in e.comandos]
+checa(not [c for c in todos if c.startswith(("DETACH", "ATTACH"))],
+      "soltar_na_pega desligado nao deveria gerar DETACH/ATTACH")
+
+
 # alvo que nao aceita o recuo minimo e recusado, e a mensagem diz por que
 p_colado = dict(base_params, recuo_entrada=90.0, recuo_minimo=90.0)
 c_colado = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_colado))

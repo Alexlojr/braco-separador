@@ -246,6 +246,26 @@
       "compare o ponto corrigido que ele imprime com o CENTRO medido a",
       "regua. A diferenca no raio entra aqui."
     ],
+    "_soltar_na_pega": [
+      "Corta o PWM da base, ombro e cotovelo enquanto a garra abre ou",
+      "fecha, e religa antes do braco voltar a andar. A garra fica com a",
+      "fonte inteira no instante em que precisa dela, que e onde ela",
+      "reclamava: braco estendido, queda de tensao nos jumpers no pior.",
+      "",
+      "So e seguro porque o braco NAO CAI quando solto - medido em",
+      "09/11/2026 com DETACH 1 a ombro 160, estendido e com a peca na",
+      "garra. Quem segura e o atrito do redutor, que nesses micro-servos",
+      "de plastico nao e retroacionavel com essa carga.",
+      "",
+      "E ATRITO, NAO FREIO: com peca mais pesada, braco mais estendido ou",
+      "minutos em vez de milissegundos, pode escorregar. Por isso vale so",
+      "para o intervalo curto da garra, e nao para a espera entre coletas.",
+      "",
+      "O ATTACH religa em atual[], que e a pose COMANDADA. Se o braco",
+      "tiver escorregado, ele volta de uma vez - mais um motivo para o",
+      "intervalo ser curto."
+    ],
+    "soltar_na_pega": false,
     "deslocamento_radial_mm": 25.0,
     "recuo_entrada_mm": 30.0,
     "recuo_minimo_mm": 25.0,
@@ -282,14 +302,18 @@
       "Nao aparecia nos testes de bancada porque a garra vazia so encosta em",
       "si mesma perto de 142: sem peca, 140 nao trava.",
       "",
-      "134 e PROVISORIO: sai de dois pontos e de uma reta, e o mecanismo da",
-      "garra nao e linear. Meca a abertura em 134 e 136, ache onde os dedos",
-      "encostam no tronco, e ponha esse angulo mais 1 ou 2 graus. Errar para",
-      "FROUXO e seguro: a retencao aqui e por encaixe, com os pratos",
-      "impedindo a peca de subir, e nao por aperto."
+      "137 veio da BANCADA, em 09/11, com a peca na garra: pegou e segurou.",
+      "A reta previa 13 mm de abertura em 137, ou seja 7 mm dentro do",
+      "tronco - sinal de que o mecanismo nao e linear perto do fechamento,",
+      "onde os dedos convergem devagar. A medida vale mais que a reta.",
+      "",
+      "O que confirma de vez: o AMP logo depois de fechar. O coletar.py ja",
+      "imprime essa corrente na etapa de fechamento. Se ela ficar ALTA com",
+      "a garra parada, o servo esta empurrando a peca e o angulo deve cair",
+      "alguns graus. Corrente baixa com a peca retida e o alvo."
     ],
     "garra_aberta_graus": 105,
-    "garra_fechada_graus": 134
+    "garra_fechada_graus": 137
   },
   "_elos_medidos": [
     "01/11/2026. Tirados do CAD oficial do MeArm V0.41 (STEP AP203 montado),",

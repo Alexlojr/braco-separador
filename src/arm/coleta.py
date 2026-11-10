@@ -83,6 +83,23 @@ class ParametrosColeta:
     # do braço: um default diferente de zero deslocaria em silêncio qualquer
     # alvo de outro tamanho.
     deslocamento_radial: float = 0.0
+
+    # Corta o PWM da base, do ombro e do cotovelo enquanto a garra abre ou
+    # fecha, e religa antes do braço voltar a andar.
+    #
+    # Serve para a garra ter a fonte inteira no instante em que ela precisa.
+    # O braço estendido é justamente onde a queda de tensão nos jumpers é
+    # pior, e é onde a garra reclamava.
+    #
+    # Isso só é seguro porque o braço NÃO CAI quando solto: medido na
+    # bancada em 09/11, com `DETACH 1` a ombro 160, estendido e com a peça
+    # na garra. Quem segura é o atrito do redutor do servo, que nesses
+    # micro-servos de plástico é alto o bastante para não ser retroacionável
+    # com essa carga. É atrito, não freio: com peça mais pesada, com o braço
+    # mais estendido, ou em minutos em vez de milissegundos, pode escorregar.
+    # Por isso fica DESLIGADO por padrão e só vale para o intervalo curto em
+    # que a garra age.
+    soltar_na_pega: bool = False
     # (x, y) do depósito, em mm. Precisa cair dentro dos limites da base:
     # um ponto "atrás" do braço (y negativo com x≈0) exige base ≈ -90°, que
     # nenhum servo de 0-180° alcança. Mantenha o depósito à frente ou ao lado.
@@ -268,15 +285,25 @@ class ControladorColeta:
                 f"Sobrevoando {recuo:.0f} mm antes do alvo, a {z_alto:.0f} mm",
                 self._cmds_pose(rx, ry, z_alto)))
 
+        # DETACH antes de a garra agir, ATTACH antes de o braço voltar a andar.
+        # Os dois andam sempre em par: uma etapa que solta tem de ser seguida,
+        # mais cedo ou mais tarde, por uma que religa, senão o braço fica mole
+        # no meio da sequência.
+        canais = [self.calib.base.canal, self.calib.ombro.canal,
+                  self.calib.cotovelo.canal]
+        soltar = [f"DETACH {c}" for c in canais] if p.soltar_na_pega else []
+        religar = [f"ATTACH {c}" for c in canais] if p.soltar_na_pega else []
+
         etapas += [
             Etapa(f"Descendo ao lado da peça, a {z_entrada:.0f} mm",
                   self._cmds_pose(rx, ry, z_entrada)),
             Etapa("Entrando no tronco, por baixo do chapéu", cmds_pega),
-            Etapa("Fechando a garra", [self._cmd_garra(True)]),
-            Etapa("Subindo com o objeto", self._cmds_pose(x, y, p.z_transporte)),
+            Etapa("Fechando a garra", soltar + [self._cmd_garra(True)]),
+            Etapa("Subindo com o objeto",
+                  religar + self._cmds_pose(x, y, p.z_transporte)),
             Etapa("Levando ao depósito", self._cmds_pose(dx, dy, p.z_transporte)),
-            Etapa("Soltando o objeto", [self._cmd_garra(False)]),
-            Etapa("Voltando para HOME", ["HOME"]),
+            Etapa("Soltando o objeto", soltar + [self._cmd_garra(False)]),
+            Etapa("Voltando para HOME", religar + ["HOME"]),
         ]
         return etapas
 
@@ -303,6 +330,17 @@ class ControladorColeta:
         real sem que este módulo precise saber que o Streamlit existe.
         """
         etapas = self.planejar(x, y)   # valida tudo antes de mover
+
+        try:
+            yield from self._executar_etapas(etapas, ao_progredir)
+        finally:
+            # Ctrl-C entre um DETACH e o ATTACH correspondente deixaria o
+            # braço mole, provavelmente no ar e com a peça. Religar aqui custa
+            # um comando inócuo quando não houve DETACH nenhum.
+            if self.params.soltar_na_pega:
+                self.serial.write(b"ATTACH ALL\n")
+
+    def _executar_etapas(self, etapas, ao_progredir):
         total = len(etapas)
 
         for i, etapa in enumerate(etapas, start=1):

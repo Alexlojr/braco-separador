@@ -54,7 +54,7 @@ LIMITES = {
 NOMES = {0: "base", 1: "ombro", 2: "cotovelo", 3: "garra"}
 
 GARRA_ABERTA = 105
-GARRA_FECHADA = 134   # 140 fecha 14 mm alem do tronco de 20 mm: trava
+GARRA_FECHADA = 137   # medido com a peca; 140 fecharia alem do tronco
 
 # ---------------------------------------------------------------------------
 # A SEQUÊNCIA. É isto que você edita.
