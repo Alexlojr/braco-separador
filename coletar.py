@@ -66,6 +66,7 @@ from src.vision.deteccao import (  # noqa: E402
 from src.vision.fonte import aplicar_rotacao  # noqa: E402
 from src.vision.quadro_publicado import limpar, publicar  # noqa: E402
 from src.vision.homografia import CalibracaoInvalida, Homografia  # noqa: E402
+from src.telemetria import Telemetria  # noqa: E402
 
 CAMINHO_CONFIG = BASE_DIR / "config" / "braco.json"
 CAMINHO_HOMOGRAFIA = BASE_DIR / "config" / "homografia.json"
@@ -97,9 +98,10 @@ class SerialInstrumentada:
     e o primeiro SET da sequencia e a abertura da garra.
     """
 
-    def __init__(self, alvo, eco: bool = False):
+    def __init__(self, alvo, eco: bool = False, telemetria=None):
         self._alvo = alvo
         self._eco = eco
+        self._tele = telemetria
         self.t_primeiro_comando = None
 
     def armar_marco(self):
@@ -114,6 +116,10 @@ class SerialInstrumentada:
             self.t_primeiro_comando = time.monotonic()
         if self._eco and linha:
             print(f"    -> {linha}")
+        if self._tele is not None and linha:
+            # Os angulos do painel saem daqui: e o unico ponto por onde passa
+            # todo comando que de fato vai para o Arduino.
+            self._tele.comando(linha)
         return self._alvo.write(dados)
 
     def __getattr__(self, nome):
@@ -254,6 +260,17 @@ def main() -> int:
 
     # ---- configuração ------------------------------------------------
     braco, calib, params_dict, calibrado = carregar_config(CAMINHO_CONFIG)
+
+    # Painel: espelha o terminal e os angulos comandados (src/telemetria.py).
+    # Daqui em diante todo print tambem vai para o log do Streamlit.
+    Telemetria.limpar()
+    telemetria = Telemetria(
+        pose_repouso=params_dict.get("pose_repouso"),
+        nomes={calib.base.canal: "Base", calib.ombro.canal: "Ombro",
+               calib.cotovelo.canal: "Cotovelo", calib.garra.canal: "Garra"},
+    )
+    stdout_original = sys.stdout
+    sys.stdout = telemetria.espelhar(stdout_original)
 
     if not calibrado and not args.forcar:
         print("ERRO: config/braco.json está com \"calibrado\": false.")
@@ -417,7 +434,7 @@ def main() -> int:
 
     # Sempre embrulha: a marca de tempo do primeiro comando e medicao, nao
     # depuracao, e precisa valer tambem na corrida que vai para o relatorio.
-    serial = SerialInstrumentada(serial, eco=args.eco)
+    serial = SerialInstrumentada(serial, eco=args.eco, telemetria=telemetria)
 
     controlador = ControladorColeta(
         serial, braco=braco, calib=calib, params=ParametrosColeta(**params_dict)
@@ -708,6 +725,8 @@ def main() -> int:
         # Apaga a publicação: imagem antiga parada no painel parece ao vivo,
         # que é pior do que painel sem imagem.
         limpar()
+        sys.stdout = stdout_original
+        Telemetria.limpar()
         if hasattr(serial, "close"):
             serial.close()
 

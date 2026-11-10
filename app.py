@@ -22,6 +22,7 @@ from ultralytics import YOLO
 
 from src.vision.fonte import aplicar_rotacao
 from src.vision.quadro_publicado import ler as ler_publicado
+from src.telemetria import ler as ler_telemetria
 from src.vision.deteccao import (
     ClasseDesconhecida,
     carregar_preferencias,
@@ -106,8 +107,53 @@ if st.sidebar.button("Parar"):
 col1, col2 = st.columns([2, 1])
 
 camera_placeholder = col1.empty()
+log_placeholder = col1.empty()
 status_placeholder = col2.empty()
+servos_placeholder = col2.empty()
 tabela_placeholder = col2.empty()
+
+# Um servo cujo angulo comandado mudou ha menos que isto aparece como "em
+# movimento". E aproximado: o painel so sabe o que foi COMANDADO (malha
+# aberta), e os movimentos do ciclo duram de 0,1 a 1,7 s.
+JANELA_MOVIMENTO_S = 1.5
+
+
+def barra(fracao, largura=10):
+    cheio = max(0, min(largura, round(fracao * largura)))
+    return "\u2588" * cheio + "\u2591" * (largura - cheio)
+
+
+def mostrar_telemetria(tele):
+    """Angulos comandados e log da coleta, publicados pelo coletar.py."""
+    if tele is None:
+        servos_placeholder.empty()
+        log_placeholder.empty()
+        return
+    agora = time.time()
+    linhas = ["#### Servos — último ângulo comandado", "",
+              "| Junta | Ângulo | Estado |", "|---|---|---|"]
+    for sv in tele.get("servos", []):
+        ang = float(sv.get("ang", 0.0))
+        if sv.get("solto"):
+            estado = "solto (sem sinal)"
+        elif agora - float(sv.get("t", 0.0)) < JANELA_MOVIMENTO_S:
+            estado = "**em movimento**"
+        else:
+            estado = "parado"
+        linhas.append(f"| {sv.get('nome')} ({sv.get('canal')}) "
+                      f"| **{ang:.1f}°**<br>{barra(ang / 180.0)} | {estado} |")
+    linhas.append("")
+    linhas.append("<sub>Servos sem realimentação: o valor é o último ângulo "
+                  "enviado ao Arduino; durante um movimento o servo ainda está "
+                  "a caminho dele.</sub>")
+    servos_placeholder.markdown("\n".join(linhas), unsafe_allow_html=True)
+
+    # Mais recente no TOPO: com a mais nova embaixo, ela cai fora da area
+    # visivel do bloco e o log parece parado justamente durante o ciclo.
+    log = tele.get("log", [])[-15:][::-1]
+    with log_placeholder.container():
+        st.markdown("**Log da coleta** — mais recente no topo")
+        st.code("\n".join(log) if log else "(sem mensagens ainda)", language=None)
 
 frame_count = 0
 ultima_detec = None
@@ -125,8 +171,12 @@ while st.session_state.rodando:
             f"**Coleta em andamento** — {meta.get('coletados', 0)} peça(s)  \n"
             f"{('vendo: ' + rotulo) if rotulo else 'nenhum objeto no campo'}"
         )
+        mostrar_telemetria(ler_telemetria())
         time.sleep(0.2)
         continue
+
+    # Sem coleta rodando, nao ha servos nem log para mostrar.
+    mostrar_telemetria(None)
 
     if picam2 is None:
         picam2 = iniciar_camera()
