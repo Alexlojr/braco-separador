@@ -228,6 +228,19 @@
     "z_mesa": 0.0,
     "z_pega": 25.0,
     "z_aproximacao": 70.0,
+    "_z_soltura": [
+      "Altura em que a garra ABRE sobre o deposito. null solta na altura de",
+      "transporte, que era o comportamento ate 10/11/2026.",
+      "",
+      "O ponto de pega e o meio do tronco, 25 mm acima da base da peca,",
+      "entao soltar a 80 mm derruba a peca de 55 mm de altura - o bastante",
+      "para quicar e sair de uma placa de 100 mm. Em 25 mm a peca encosta na",
+      "placa antes de a garra abrir, e soltar vira pousar.",
+      "",
+      "SUBA se o deposito acumular pecas: a garra desce ate aqui e nao sabe",
+      "o que ja esta embaixo."
+    ],
+    "z_soltura_mm": 25.0,
     "z_transporte": 80.0,
     "_deslocamento_radial": [
       "Correcao do ponto que a visao entrega, ao longo do raio, afastando",
@@ -368,7 +381,7 @@
       "placa e ponha o valor medido."
     ],
     "deposito_xy": [
-      -150.0,
+      -180.0,
       0.0
     ],
     "_pausa_garra": [

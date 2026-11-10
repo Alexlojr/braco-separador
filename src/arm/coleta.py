@@ -43,6 +43,18 @@ class ParametrosColeta:
     z_aproximacao: float = 70.0  # altura do sobrevoo antes de descer
     z_transporte: float = 80.0   # altura ao carregar o objeto
 
+    # Altura em que a garra ABRE sobre o depósito. `None` solta na altura
+    # de transporte, que era o comportamento até 10/11/2026.
+    #
+    # O ponto de pega é o meio do tronco, 25 mm acima da base da peça, então
+    # soltar a 80 mm derruba a peça de 55 mm de altura — o bastante para ela
+    # quicar e sair de uma placa de 100 mm. Descer antes transforma a
+    # soltura em pousar.
+    #
+    # Suba se o depósito acumular peças: a garra desce até aqui e não sabe
+    # o que já está embaixo.
+    z_soltura: float | None = 25.0
+
     # Quanto a garra para ANTES da peça, medido no raio, para descer ao lado
     # dela em vez de em cima. Precisa ser maior que a metade do chapéu da
     # peça (25 mm), senão a descida acontece sobre ele.
@@ -455,6 +467,9 @@ class ControladorColeta:
         ]
         etapas += self._etapas_transporte(x, y, dx, dy, pose)
         etapas += [
+            *([Etapa(f"Descendo sobre o depósito, a {p.z_soltura:.0f} mm",
+                     self._cmds_pose(dx, dy, p.z_soltura, pose))]
+              if p.z_soltura is not None else []),
             Etapa("Soltando o objeto", soltar + [self._cmd_garra(False)]),
             Etapa("Voltando para HOME", religar + ["HOME"]),
         ]
