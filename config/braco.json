@@ -384,6 +384,33 @@
       -180.0,
       0.0
     ],
+    "_depositos_por_classe": [
+      "SEPARACAO: para onde vai cada classe detectada, em mm, na mesma",
+      "convencao do deposito_xy. Classe que nao estiver aqui cai no",
+      "deposito_xy, que passa a ser o destino PADRAO e nao o unico.",
+      "",
+      "E aqui, e nao em ParametrosColeta, porque o controlador e UM, calibrado",
+      "uma vez: so o destino muda por ciclo. Dois controladores significariam",
+      "duas copias de elos, limites e offsets - justamente o que nao pode",
+      "divergir.",
+      "",
+      "A chave e o NOME da classe no modelo, sem diferenciar maiuscula de",
+      "minuscula. Com os pesos base, os nomes sao os do COCO; depois do treino",
+      "passam a ser os nomes do data.yaml - ATUALIZE ESTE MAPA ao trocar o",
+      "modelo, senao tudo cai no padrao sem avisar.",
+      "",
+      "Depositos da bancada: esquerdo = servo 180 = (-r, 0); direito = servo 0",
+      "= (r, 0). Raio util da sequencia completa: 115 a 185 mm nos dois.",
+      "",
+      "A sequencia inteira e validada antes do primeiro SET, destino incluido:",
+      "deposito fora de alcance recusa a coleta com a peca ainda na mesa."
+    ],
+    "depositos_por_classe": {
+      "mouse": [
+        180.0,
+        0.0
+      ]
+    },
     "_pausa_garra": [
       "Pausa EXTRA depois das etapas de garra, somada a pausa_s.",
       "",

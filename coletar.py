@@ -34,6 +34,8 @@ placeholder é como ele quebra engrenagem.
 """
 
 import argparse
+import json
+import math
 import statistics
 import sys
 import time
@@ -187,7 +189,10 @@ def main() -> int:
                     help="posicao do deposito em mm, sobrepondo o "
                          "deposito_xy do braco.json. Mesma convencao da area "
                          "de coleta: origem no eixo da base, +X direita, "
-                         "+Y frente. Ex: --deposito -150,0 poe o deposito a "
+                         "+Y frente. Sobrepoe o destino PADRAO; classes "
+                         "listadas em coleta.depositos_por_classe continuam "
+                         "indo para o deposito delas. "
+                         "Ex: --deposito -150,0 poe o deposito a "
                          "esquerda, com a base girando ate 180 graus")
     ap.add_argument("--sem-soltar", action="store_true",
                     help="forca soltar_na_pega, soltar_no_giro e "
@@ -217,10 +222,11 @@ def main() -> int:
     # proprio celular. A caixa muda de objeto no meio da janela, as posicoes
     # viram de outro lugar, e no fim da sequencia o braco iria buscar a mao.
     ap.add_argument("--classe", default=None,
-                    help="classe COCO a coletar, por nome ou número. Padrão: "
-                         "o visao.classe_alvo do braco.json, que o painel "
-                         "também lê. Objetos achatados dão coordenada melhor: "
-                         "mouse, remote, scissors")
+                    help="classes a coletar, por nome ou número, separadas "
+                         "por vírgula. Padrão: o visao.classe_alvo do "
+                         "braco.json, que o painel também lê. Mais de uma "
+                         "ativa a separação: cada classe vai para o depósito "
+                         "de coleta.depositos_por_classe. Ex: --classe mouse,cell phone")
     ap.add_argument("--imgsz", type=int, default=640,
                     help="resolução de entrada do YOLO (padrão %(default)s). "
                          "O custo é quadrático: 320 roda ~4x mais rápido que "
@@ -368,7 +374,7 @@ def main() -> int:
              if params_dict.get("passo_giro") else " de uma vez"))
     import math as _m
     _dx, _dy = params_dict["deposito"]
-    print(f"Deposito: ({_dx:.0f}, {_dy:.0f}) mm, que e base "
+    print(f"Deposito padrao: ({_dx:.0f}, {_dy:.0f}) mm, que e base "
           f"{_m.degrees(_m.atan2(_dy, _dx)):.0f} graus e raio "
           f"{_m.hypot(_dx, _dy):.0f} mm.")
 
@@ -423,14 +429,59 @@ def main() -> int:
 
     modelo = YOLO(str(CAMINHO_MODELO))
     try:
-        classe_alvo = resolver_classe(args.classe, modelo.names)
+        pedidos = [c.strip() for c in str(args.classe).split(",") if c.strip()]
+        if not pedidos:
+            print("ERRO: nenhuma classe pedida. Use --classe ou preencha "
+                  "visao.classe_alvo no braco.json.")
+            return 1
+        # dict.fromkeys e nao set: preserva a ordem pedida, que e a ordem em
+        # que o banner lista os destinos.
+        classes_alvo = list(dict.fromkeys(
+            resolver_classe(c, modelo.names) for c in pedidos))
     except ClasseDesconhecida as e:
         print(f"ERRO: {e}")
         return 1
+
+    # Depósito por classe. Fica fora de ParametrosColeta de propósito:
+    # o controlador é um só, calibrado uma vez, e o destino é escolhido
+    # por ciclo. Classe sem entrada no mapa cai no deposito_xy.
+    try:
+        bruto = json.loads(CAMINHO_CONFIG.read_text(encoding="utf-8"))
+        por_classe = bruto.get("coleta", {}).get(
+            "depositos_por_classe", {}) or {}
+    except (OSError, ValueError) as e:
+        print(f"ERRO lendo depositos_por_classe: {e}")
+        return 1
+
+    destinos = {}
+    for nome, xy in por_classe.items():
+        try:
+            destinos[nome.lower()] = (float(xy[0]), float(xy[1]))
+        except (TypeError, ValueError, IndexError):
+            print(f"ERRO: depositos_por_classe[{nome!r}] = {xy!r} não é "
+                  f"[X, Y] em mm.")
+            return 1
+
     capturar, fechar_camera = abrir_camera()
 
-    print(f"Coletando a classe {classe_alvo} "
-          f"({modelo.names[classe_alvo]}), confiança >= {args.confianca:.2f}.")
+    nomes_alvo = ", ".join(f"{c} ({modelo.names[c]})"
+                            for c in classes_alvo)
+    print(f"Coletando: {nomes_alvo}. Confiança >= {args.confianca:.2f}.")
+    for c in classes_alvo:
+        nome = modelo.names[c]
+        destino = destinos.get(nome.lower())
+        if destino is None:
+            dx_d, dy_d = params_dict["deposito"]
+            origem = "deposito_xy (padrão)"
+        else:
+            dx_d, dy_d = destino
+            origem = "depositos_por_classe"
+        ang_d = math.degrees(math.atan2(dy_d, dx_d)) % 360.0
+        print(f"  {nome} -> ({dx_d:.0f}, {dy_d:.0f}) mm, "
+              f"base {ang_d:.0f}°, de {origem}")
+    if len(classes_alvo) > 1 and not destinos:
+        print("  AVISO: mais de uma classe e nenhum depósito por classe "
+              "configurado — tudo vai para o mesmo lugar.")
     print(f"Portão: {params_est.janela} detecções dentro de "
           f"{params_est.tolerancia_mm:.1f} mm, com no máximo "
           f"{params_est.intervalo_maximo_s:.1f} s entre elas. Ctrl-C para sair.\n")
@@ -468,7 +519,7 @@ def main() -> int:
             if t_quadro - ultima_coleta < PAUSA_APOS_COLETA_S:
                 continue
 
-            resultado = modelo(frame, classes=[classe_alvo],
+            resultado = modelo(frame, classes=classes_alvo,
                                imgsz=args.imgsz, conf=0.10, verbose=False)[0]
             t_inferencia = time.monotonic()
 
@@ -568,9 +619,18 @@ def main() -> int:
                 ultima_coleta = time.monotonic()
                 continue
 
+            # O destino sai da CLASSE detectada, e nao de um parametro
+            # fixo: e isto que faz a separacao ser decidida pela
+            # inferencia. Classe fora do mapa cai no deposito padrao.
+            destino = destinos.get(deteccao.nome.lower())
+            if destino is not None:
+                print(f"  destino: {deteccao.nome} -> "
+                      f"({destino[0]:.0f}, {destino[1]:.0f}) mm")
+
             try:
                 serial.armar_marco()
-                for etapa in controlador.executar(x_mm, y_mm):
+                for etapa in controlador.executar(x_mm, y_mm,
+                                                  deposito=destino):
                     linha = f"  {etapa.descricao}"
                     # Depois de fechar, a corrente da garra é o dado que diz se
                     # a pega por encaixe está funcionando sem forçar o servo.

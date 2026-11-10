@@ -406,7 +406,12 @@ class ControladorColeta:
 
         return f"SET {g.canal} {round(angulo, 1)}"
 
-    def planejar(self, x: float, y: float) -> list[Etapa]:
+    def planejar(
+        self,
+        x: float,
+        y: float,
+        deposito: tuple[float, float] | None = None,
+    ) -> list[Etapa]:
         """
         Monta a sequência completa para pegar em (x, y) e levar ao depósito.
 
@@ -416,7 +421,12 @@ class ControladorColeta:
         na garra, que é bem pior de recuperar do que simplesmente recusar.
         """
         p = self.params
-        dx, dy = p.deposito
+        # `deposito` sobrepoe o da configuracao para esta sequencia so.
+        # E assim, e nao trocando o parametro do controlador, porque o
+        # destino depende da CLASSE detectada e muda a cada ciclo: um
+        # controlador por deposito teria duas copias de toda a
+        # calibracao, que e justamente o que nao pode divergir.
+        dx, dy = p.deposito if deposito is None else deposito
 
         # A visão entrega a borda do objeto, não o centro do apoio. Corrigir
         # aqui, antes de tudo, faz o recuo e o sobrevoo saírem do ponto certo.
@@ -576,6 +586,7 @@ class ControladorColeta:
         x: float,
         y: float,
         ao_progredir: Callable[[int, int, str], None] | None = None,
+        deposito: tuple[float, float] | None = None,
     ) -> Iterator[Etapa]:
         """
         Executa a coleta, rendendo cada etapa conforme acontece.
@@ -583,7 +594,10 @@ class ControladorColeta:
         É um gerador para que a interface possa mostrar progresso em tempo
         real sem que este módulo precise saber que o Streamlit existe.
         """
-        etapas = self.planejar(x, y)   # valida tudo antes de mover
+        # Valida tudo antes de mover, DESTINO INCLUIDO: deposito fora
+        # de alcance recusa a coleta sem a peca sair do lugar, em vez
+        # de parar no meio do transporte com ela na garra.
+        etapas = self.planejar(x, y, deposito)
         concluiu = False
 
         try:
