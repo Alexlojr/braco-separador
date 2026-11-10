@@ -223,11 +223,18 @@ for etapa in controlador.executar(leitura.x_mm, leitura.y_mm):
     if not serial.parado:
         cortadas.append((etapa.descricao, serial.pendente_s))
 
-checa(len(etapas) == 15, f"a coleta deveria ter 15 etapas, tem {len(etapas)}")
-# 23 e nao 25: a etapa do giro manda SO a base. Recolhido e girado estao no
-# mesmo raio e na mesma altura, entao ombro e cotovelo repetiriam o proprio
-# angulo - e com soltar_no_giro seriam comando para junta sem PWM.
-checa(len(serial.linhas) == 33, f"deveriam sair 33 comandos, sairam {len(serial.linhas)}")
+# Nada de numero magico aqui. A contagem de etapas muda com o passo do giro,
+# com a posicao do deposito e com os flags de DETACH, e numero fixo so dava
+# falha de manutencao - foi o que aconteceu ao mover o deposito de 128 para
+# 180 graus. O que importa nao e QUANTAS etapas sao, e sim que tudo o que foi
+# planejado saiu pela serial, na ordem, e que nada a mais saiu.
+planejadas = controlador.planejar(leitura.x_mm, leitura.y_mm)
+checa(len(etapas) == len(planejadas),
+      f"executou {len(etapas)} etapas para um plano de {len(planejadas)}")
+checa(serial.linhas == [cmd for e in planejadas for cmd in e.comandos],
+      "o que saiu pela serial nao e exatamente o plano, na ordem")
+checa(len(etapas) > 10, f"a coleta encolheu para {len(etapas)} etapas; "
+                        "alguma delas sumiu do planejar")
 checa(all(l.startswith(("SET ", "DETACH ", "ATTACH ")) or l == "HOME"
           for l in serial.linhas),
       "todo comando deveria ser SET, DETACH, ATTACH ou HOME")
