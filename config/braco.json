@@ -337,7 +337,21 @@
       "braco esta estendido, porque os outros servos segurando derrubam a",
       "tensao que chega nela."
     ],
-    "pausa_s": 0.25,
+    "_pausa_s": [
+      "Pausa depois de CADA etapa, somada a espera do BUSY.",
+      "",
+      "Foi de 0,25 para 0,6 em 09/11/2026. O BUSY do firmware e baseado no",
+      "TEMPO PLANEJADO do movimento, nao na posicao: se o servo nao alcanca a",
+      "velocidade comandada - e sob carga, com a tensao que chega pela",
+      "protoboard, ele nao alcanca - o firmware declara pronto com o servo",
+      "ainda andando, e a etapa seguinte comeca por cima da anterior. Na",
+      "bancada isso aparecia como ombro e cotovelo se movendo durante o giro",
+      "da base, que e a cauda da etapa de recolher.",
+      "",
+      "A correcao de fundo e comandar uma velocidade que o servo alcance",
+      "(--velocidade). Esta pausa e a margem para o que sobrar."
+    ],
+    "pausa_s": 0.6,
     "pausa_garra_s": 0.5,
     "_garra": [
       "Angulos de servo da garra, em GRAUS. null usa o minimo/maximo da junta.",

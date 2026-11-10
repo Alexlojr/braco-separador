@@ -130,6 +130,10 @@ def main() -> int:
                          "projeto (prato de 50 mm), ~12 para o mouse em pé. "
                          "Trocar o objeto de teste sem trocar isto faz a "
                          "garra fechar atrás dele")
+    ap.add_argument("--pausa", type=float, default=None,
+                    help="pausa em segundos depois de cada etapa, sobrepondo "
+                         "o pausa_s do braco.json. Sobe quando uma etapa "
+                         "comeca com a anterior ainda andando")
     ap.add_argument("--velocidade", type=float, default=None,
                     help="graus por segundo, enviado por SPEED ao conectar. "
                          "Sem isto vale a velocidade compilada no firmware "
@@ -274,6 +278,8 @@ def main() -> int:
     # atrás da peça sem nada reclamar.
     if args.deslocamento is not None:
         params_dict["deslocamento_radial"] = args.deslocamento
+    if args.pausa is not None:
+        params_dict["pausa_s"] = args.pausa
     if params_dict.get("deslocamento_radial"):
         print(f"Correção radial: {params_dict['deslocamento_radial']:.0f} mm "
               f"(meia profundidade do apoio do objeto).")
