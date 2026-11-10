@@ -755,7 +755,7 @@ def testa_acoplamento_em_lote():
     B = float(re.search(r"ACOP_B\s*=\s*([\d.]+)", fonte).group(1))
     M = float(re.search(r"ACOP_MARGEM\s*=\s*([\d.]+)", fonte).group(1))
     lim_min = _extrai_vetor(fonte, "lim_min")
-    IDX_OMBRO, IDX_COTOVELO = 1, 2
+    IDX_COTOVELO = int(re.search(r"IDX_COTOVELO\s*=\s*(\d+)", fonte).group(1))
 
     def min_cotovelo(s1):
         return max(A - B * s1 + M, lim_min[IDX_COTOVELO])
@@ -793,9 +793,24 @@ def testa_acoplamento_em_lote():
                 )
                 break
 
-    # e o .ino tem de estar usando o alvo quando as duas estao no mesmo lote
-    if "no_lote[outra]" not in fonte or "return alvo[outra]" not in fonte:
-        falhas.append("refAcoplada() nao usa o alvo da outra junta no lote")
+    # e o .ino tem de estar usando o alvo quando as duas estao no mesmo lote.
+    # Checar so que as duas expressoes existem nao basta: um "if (false)" no
+    # lugar da condicao deixa as duas no arquivo e desliga o comportamento.
+    corpo = re.search(r"float refAcoplada\([^)]*\)\s*\{(.*?)\n\}", fonte, re.S)
+    if corpo is None:
+        falhas.append("refAcoplada() nao encontrada no .ino")
+    else:
+        texto = corpo.group(1)
+        cond = re.search(r"bool\s+juntas\s*=\s*([^;]+);", texto)
+        if (cond is None or "no_lote[outra]" not in cond.group(1)
+                or "JANELA_LOTE_MS" not in cond.group(1)):
+            falhas.append("a condicao de 'juntas' nao olha no_lote[outra] "
+                          "dentro da JANELA_LOTE_MS")
+        if not re.search(r"if\s*\(\s*juntas\s*\)\s*return\s+alvo\[outra\]", texto):
+            falhas.append("refAcoplada() nao devolve o alvo quando juntas")
+        if "atual[outra]" not in texto:
+            falhas.append("refAcoplada() perdeu o caso FORA do lote, onde o "
+                          "pior entre atual e alvo e que vale")
 
     return falhas
 
