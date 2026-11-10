@@ -141,7 +141,7 @@
       "posicoes diferentes dao dispersao alta e o portao recusa de todo",
       "jeito - este parametro so decide quando desistir de esperar."
     ],
-    "intervalo_maximo_s": 2.5
+    "intervalo_maximo_s": 5.0
   },
   "coleta": {
     "_alturas": [

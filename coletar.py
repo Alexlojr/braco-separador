@@ -69,6 +69,30 @@ CAMINHO_MODELO = BASE_DIR / "models" / "yolov8n.pt"
 PAUSA_APOS_COLETA_S = 2.0
 
 
+class SerialComEco:
+    """
+    Repassa tudo para a serial de verdade, imprimindo o que passa.
+
+    Existe porque em modo real so as descricoes das etapas apareciam, e as
+    descricoes sao texto que EU escrevi: elas dizem o que o codigo pretendia,
+    nao o que foi enviado. Quando o braco faz algo que a descricao nao
+    explica, a primeira duvida vira "sera que o codigo certo esta rodando?" —
+    e sem ver os comandos nao da para responder.
+    """
+
+    def __init__(self, alvo):
+        self._alvo = alvo
+
+    def write(self, dados: bytes) -> int:
+        linha = dados.decode("utf-8", errors="ignore").strip()
+        if linha:
+            print(f"    -> {linha}")
+        return self._alvo.write(dados)
+
+    def __getattr__(self, nome):
+        return getattr(self._alvo, nome)
+
+
 class SerialDeMentira:
     """Registra os comandos em vez de enviar. É o que o --dry-run usa."""
 
@@ -130,6 +154,10 @@ def main() -> int:
                          "projeto (prato de 50 mm), ~12 para o mouse em pé. "
                          "Trocar o objeto de teste sem trocar isto faz a "
                          "garra fechar atrás dele")
+    ap.add_argument("--eco", action="store_true",
+                    help="imprime cada comando enviado e cada resposta do "
+                         "firmware. Use quando o braco fizer algo que a "
+                         "descricao da etapa nao explica")
     ap.add_argument("--pausa", type=float, default=None,
                     help="pausa em segundos depois de cada etapa, sobrepondo "
                          "o pausa_s do braco.json. Sobe quando uma etapa "
@@ -284,6 +312,9 @@ def main() -> int:
         print(f"Correção radial: {params_dict['deslocamento_radial']:.0f} mm "
               f"(meia profundidade do apoio do objeto).")
 
+    if args.eco:
+        serial = SerialComEco(serial)
+
     controlador = ControladorColeta(
         serial, braco=braco, calib=calib, params=ParametrosColeta(**params_dict)
     )
@@ -419,7 +450,15 @@ def main() -> int:
                 continue
 
             try:
+                vistas = len(serial.historico()) if (
+                    args.eco and hasattr(serial, "historico")) else 0
                 for etapa in controlador.executar(x_mm, y_mm):
+                    if args.eco and hasattr(serial, "historico"):
+                        hist = serial.historico()
+                        for direcao, linha_h in hist[vistas:]:
+                            if direcao == "RX":
+                                print(f"       <- {linha_h}")
+                        vistas = len(hist)
                     linha = f"  {etapa.descricao}"
                     # Depois de fechar, a corrente da garra é o dado que diz se
                     # a pega por encaixe está funcionando sem forçar o servo.
