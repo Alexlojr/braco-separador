@@ -193,6 +193,25 @@ const float VEL_GARRA_MAX = 1000.0;
 const float VEL_MECANICA_GARRA = 300.0;   // graus/s, para estimar o BUSY
 const unsigned long GARRA_ASSENTA_MIN_MS = 60;
 unsigned long t_garra_fim = 0;            // ate quando o BUSY conta a garra
+
+// IMPULSO: movimento curto de garra passa primeiro pelo fim de curso aberto.
+//
+// Medido na bancada em 09/11/2026: mandar a garra de 140 para 130 ela demora
+// muito ou simplesmente nao vai. Mandar 100 antes, e so depois 130, funciona
+// sempre. O motivo e atrito estatico — o curso util inteiro tem 40 graus, e
+// um comando de 10 graus vira uma variacao de pulso pequena demais para
+// vencer o atrito de partida da engrenagem com o paralelogramo da garra.
+// Piora com o braco estendido, quando a queda de tensao nos jumpers tira
+// torque justamente de quem precisa de um empurrao.
+//
+// Correr ate o batente primeiro resolve porque o movimento longo parte com
+// margem de sobra, e o segundo trecho sai de um ponto conhecido e com o
+// mecanismo ja solto.
+//
+// Abaixo deste curso, aplica o impulso. Acima, vai direto.
+const float GARRA_IMPULSO_MIN = 15.0;
+float garra_pendente = -1.0;    // alvo real depois do impulso; <0 = nenhum
+bool garra_impulsionou = false; // ultimo defineAlvo usou impulso?
 bool acoplamento_apertou = false;         // ultimo defineAlvo bateu no acoplamento?
 
 // Um movimento curto demais fica com duração de poucos milissegundos e volta
@@ -235,7 +254,7 @@ const int16_t demo_passos[][NUM_SERVOS] PROGMEM = {
   {   90,    -1,      -1,     -1 },   //  3 gira a base para a peça
   {   -1,   160,     120,     -1 },   //  4 estende por cima da peça
   {   -1,   170,     110,     -1 },   //  5 desce até a peça
-  {   -1,    -1,      -1,    140 },   //  6 FECHA a garra
+  {   -1,    -1,      -1,    134 },   //  6 FECHA a garra
   {   -1,   150,     130,     -1 },   //  7 levanta com a peça
   {   -1,   130,     140,     -1 },   //  8 recolhe para girar
   {   40,    -1,      -1,     -1 },   //  9 gira a base para o depósito
@@ -431,6 +450,23 @@ void defineAlvo(uint8_t id, float angulo) {
   // O pegada_manual.py e a tabela DEMO contornavam isso por convenção, cada
   // um mandando a garra sozinha na sua etapa. Agora o firmware garante.
   if (id == IDX_GARRA) {
+    // Curso curto: desvia para o batente aberto e guarda o alvo real para
+    // quando o impulso terminar. Ver GARRA_IMPULSO_MIN.
+    //
+    // Nao se aplica quando o proprio alvo ja esta perto do batente: ali o
+    // segundo trecho seria curto de novo, e o servo esta encostado no fim de
+    // curso, que e a condicao em que ele menos precisa de ajuda.
+    garra_impulsionou = false;
+    float curso_pedido = fabs(angulo - atual[id]);
+    bool perto_do_batente = fabs(angulo - lim_min[id]) < GARRA_IMPULSO_MIN;
+
+    if (curso_pedido > 0.05 && curso_pedido < GARRA_IMPULSO_MIN
+        && !perto_do_batente && garra_pendente < 0.0) {
+      garra_pendente = angulo;
+      angulo = lim_min[id];
+      garra_impulsionou = true;
+    }
+
     origem[id] = atual[id];
     alvo[id] = angulo;
     no_lote[id] = false;
@@ -479,7 +515,16 @@ void defineAlvo(uint8_t id, float angulo) {
   }
 }
 
+// Um impulso pendente ainda e movimento: dizer BUSY 0 entre as duas pernas
+// faria o lado Python mandar a pose seguinte com a garra no batente, e nao
+// no angulo que ele pediu.
 bool algumaEmMovimento() {
+  if (garra_pendente >= 0.0) return true;
+  return algumaEmMovimentoInterno();
+}
+
+
+bool algumaEmMovimentoInterno() {
   unsigned long agora = millis();
   // A garra sem suavizacao tem duracao 0, entao o laco abaixo nao a enxerga.
   // Ela ainda esta andando: o pulso foi escrito, o servo e que nao teletransporta.
@@ -641,6 +686,26 @@ void verificaStall() {
   Serial.print(' ');
   Serial.println(corrente, 2);
 }
+
+// Segunda perna do impulso: o batente ja foi alcancado, agora vai ao alvo.
+//
+// Fica no loop e nao dentro do defineAlvo porque o firmware nao bloqueia: o
+// primeiro trecho precisa de tempo real para acontecer, e esperar dentro do
+// defineAlvo travaria a serial e o resto do braco junto.
+void concluiImpulsoGarra() {
+  if (garra_pendente < 0.0) return;
+  // Subtracao e nao comparacao direta, como no resto do arquivo: millis()
+  // volta a zero depois de ~49 dias, e "millis() < t_garra_fim" trava o
+  // impulso para sempre se a virada cair no meio dele.
+  if ((long)(t_garra_fim - millis()) > 0) return;
+
+  float destino = garra_pendente;
+  garra_pendente = -1.0;    // zera ANTES de chamar, senao o defineAlvo ve um
+                            // impulso em curso e recusa o proprio alvo
+  defineAlvo(IDX_GARRA, destino);
+  garra_impulsionou = false;   // ja foi reportado no SET que originou
+}
+
 
 void atualizaMovimento() {
   unsigned long agora = millis();
@@ -846,6 +911,12 @@ void processaComando(char *texto) {
     // para um lugar que ninguem pediu, e a diferenca entre o limite de caixa
     // e o acoplado muda o que se faz a respeito.
     if (acoplamento_apertou) Serial.print(F(" ACOPLADO"));
+    // O impulso MOVE a garra para um lugar que nao foi pedido, ainda que por
+    // instantes. Calar isso seria esconder movimento de quem esta operando.
+    if (garra_impulsionou) {
+      Serial.print(F(" IMPULSO->"));
+      Serial.print(garra_pendente, 1);
+    }
     Serial.println();
 
   } else if (strcmp(cmd, "GET") == 0 && n == 2 && strcmp(tok[1], "ALL") == 0) {
@@ -1167,6 +1238,7 @@ void loop() {
   }
 
   atualizaMovimento();
+  concluiImpulsoGarra();
   atualizaDemo();
   amostraCorrente();
   verificaStall();

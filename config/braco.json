@@ -269,8 +269,27 @@
       "                 alem disso: com form closure a retencao e geometrica,",
       "                 e apertar mais so aquece o servo."
     ],
+    "_garra_fechada_medida": [
+      "09/11/2026. Duas medidas de abertura entre os dedos:",
+      "  SET 3 105 -> 90 mm     SET 3 130 -> 30 mm",
+      "Dao 2,4 mm por grau. O tronco da peca tem 20 mm, que pela reta cai em",
+      "134 graus - e o 140 que estava aqui daria 6 mm, ou seja 14 mm DEPOIS",
+      "de encostar no tronco. Era travamento garantido em toda pega: o servo",
+      "passaria o fim de cada fechamento empurrando a peca, puxando corrente",
+      "de travamento justamente no instante em que o braco esta estendido e",
+      "a queda de tensao nos jumpers e pior.",
+      "",
+      "Nao aparecia nos testes de bancada porque a garra vazia so encosta em",
+      "si mesma perto de 142: sem peca, 140 nao trava.",
+      "",
+      "134 e PROVISORIO: sai de dois pontos e de uma reta, e o mecanismo da",
+      "garra nao e linear. Meca a abertura em 134 e 136, ache onde os dedos",
+      "encostam no tronco, e ponha esse angulo mais 1 ou 2 graus. Errar para",
+      "FROUXO e seguro: a retencao aqui e por encaixe, com os pratos",
+      "impedindo a peca de subir, e nao por aperto."
+    ],
     "garra_aberta_graus": 105,
-    "garra_fechada_graus": 140
+    "garra_fechada_graus": 134
   },
   "_elos_medidos": [
     "01/11/2026. Tirados do CAD oficial do MeArm V0.41 (STEP AP203 montado),",

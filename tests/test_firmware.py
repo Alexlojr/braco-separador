@@ -730,6 +730,107 @@ def testa_limites_sincronizados():
     ]
 
 
+def testa_impulso_garra():
+    """
+    Modelo da decisao de IMPULSO, com os numeros lidos do .ino.
+
+    Medido na bancada em 09/11/2026: mandar a garra de 140 para 130 ela
+    demora muito ou nao vai; mandar 100 antes e depois 130 funciona sempre.
+    E atrito estatico, e piora com o braco estendido, quando a queda de
+    tensao nos jumpers tira torque de quem precisa de um empurrao.
+
+    O que se testa aqui nao e o movimento - isso so o hardware diz - e sim
+    que a decisao de desviar pelo batente acontece nos casos certos. Dois
+    erros possiveis sao silenciosos e caros:
+
+      - impulsionar um movimento LONGO: a garra abriria toda antes de fechar
+        em cima da peca, o que derruba a peca;
+      - impulsionar o segundo trecho do proprio impulso: laco infinito, com
+        a garra batendo no batente para sempre.
+    """
+    fonte = INO.read_text(encoding="utf-8")
+    limiar = float(re.search(r"GARRA_IMPULSO_MIN\s*=\s*([\d.]+)", fonte).group(1))
+    lim_min = _extrai_vetor(fonte, "lim_min")
+    lim_max = _extrai_vetor(fonte, "lim_max")
+    idx = int(re.search(r"IDX_GARRA\s*=\s*(\d+)", fonte).group(1))
+    batente, teto = lim_min[idx], lim_max[idx]
+
+    def decide(atual, alvo, pendente=-1.0):
+        """Devolve (destino_imediato, pendente_novo). Espelha o .ino."""
+        curso = abs(alvo - atual)
+        perto = abs(alvo - batente) < limiar
+        if curso > 0.05 and curso < limiar and not perto and pendente < 0.0:
+            return batente, alvo
+        return alvo, -1.0
+
+    falhas = []
+
+    def checa_caso(atual, alvo, espera_impulso, nota):
+        destino, pend = decide(atual, alvo)
+        houve = pend >= 0.0
+        if houve != espera_impulso:
+            falhas.append(
+                f"{atual:.0f} -> {alvo:.0f}: impulso={houve}, esperado "
+                f"{espera_impulso} ({nota})"
+            )
+        if houve and destino != batente:
+            falhas.append(f"{atual:.0f} -> {alvo:.0f}: impulso deveria ir ao "
+                          f"batente {batente:.0f}, foi para {destino:.0f}")
+
+    checa_caso(140, 130, True, "o caso medido na bancada")
+    checa_caso(teto, teto - limiar + 1, True, "logo abaixo do limiar")
+    checa_caso(105, 140, False, "curso longo, abre->fecha da coleta")
+    checa_caso(140, 105, False, "curso longo, fecha->abre da coleta")
+    checa_caso(batente + 3, batente + 5, False, "alvo colado no batente")
+    checa_caso(130, 130, False, "sem movimento nenhum")
+    checa_caso(teto, teto - limiar - 1, False, "logo acima do limiar")
+
+    # com impulso em curso, um comando novo nao abre outro
+    _, pend = decide(140, 130, pendente=130.0)
+    if pend >= 0.0:
+        falhas.append("impulso aninhado: comando durante impulso gerou outro")
+
+    # o SEGUNDO trecho nunca pode impulsionar de novo. Varre todos os alvos
+    # que geram impulso e confirma que, saindo do batente, cada um vai direto.
+    for alvo_int in range(int(batente), int(teto) + 1):
+        for atual_int in range(int(batente), int(teto) + 1):
+            destino, pend = decide(float(atual_int), float(alvo_int))
+            if pend < 0.0:
+                continue
+            _, pend2 = decide(batente, pend)
+            if pend2 >= 0.0:
+                falhas.append(
+                    f"segundo trecho impulsionaria de novo: {atual_int} -> "
+                    f"{alvo_int} -> batente -> {pend:.0f}"
+                )
+                break
+
+    # o estado tem de estar zerado antes de chamar defineAlvo na segunda
+    # perna, senao a propria guarda de impulso-em-curso recusaria o alvo
+    trecho = re.search(r"void concluiImpulsoGarra\(\)\s*\{(.*?)\n\}",
+                       fonte, re.S)
+    if trecho is None:
+        falhas.append("concluiImpulsoGarra() nao encontrada no .ino")
+    else:
+        corpo = trecho.group(1)
+        pos_zera = corpo.find("garra_pendente = -1.0")
+        pos_chama = corpo.find("defineAlvo(")
+        if pos_zera < 0 or pos_chama < 0:
+            falhas.append("concluiImpulsoGarra() sem zerar o pendente ou sem "
+                          "chamar defineAlvo")
+        elif pos_zera > pos_chama:
+            falhas.append("concluiImpulsoGarra() chama defineAlvo ANTES de "
+                          "zerar garra_pendente: a guarda recusaria o alvo")
+
+    # e o BUSY precisa contar o impulso inteiro
+    if "if (garra_pendente >= 0.0) return true;" not in fonte:
+        falhas.append("algumaEmMovimento() nao conta o impulso pendente: o "
+                      "lado Python mandaria a pose seguinte com a garra no "
+                      "batente")
+
+    return falhas
+
+
 def testa_acoplamento_sincronizado():
     """
     A reta do limite acoplado esta em DOIS lugares, e os dois tem de concordar.
@@ -812,6 +913,12 @@ def main():
     if not falhas_acop:
         print("limite acoplado e pose de repouso iguais no .ino e no Python")
 
+    falhas_imp = testa_impulso_garra()
+    for f in falhas_imp:
+        print(f"  FALHA impulso: {f}")
+    if not falhas_imp:
+        print("impulso da garra: decide certo e nao se aninha")
+
     falhas_sensor = testa_sensor()
     for f in falhas_sensor:
         print(f"  FALHA sensor: {f}")
@@ -820,7 +927,8 @@ def main():
           f"{'passaram' if not falhas_mov else f'-> {len(falhas_mov)} falha(s)'}")
 
     total = (falhas + len(falhas_mov) + len(falhas_sensor)
-             + len(falhas_demo) + len(falhas_limites) + len(falhas_acop))
+             + len(falhas_demo) + len(falhas_limites) + len(falhas_acop)
+             + len(falhas_imp))
     print("\nOK" if total == 0 else f"\n{total} falha(s)")
     return 1 if total else 0
 
