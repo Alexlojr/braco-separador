@@ -123,6 +123,13 @@ def main() -> int:
                     help="mostra os comandos sem abrir a serial")
     ap.add_argument("--forcar", action="store_true",
                     help="roda mesmo com a config marcada como não calibrada")
+    ap.add_argument("--deslocamento", type=float, default=None,
+                    help="correção radial em mm, sobrepondo o "
+                         "deslocamento_radial_mm do braco.json. É meia "
+                         "profundidade do apoio do OBJETO: 25 para a peça do "
+                         "projeto (prato de 50 mm), ~12 para o mouse em pé. "
+                         "Trocar o objeto de teste sem trocar isto faz a "
+                         "garra fechar atrás dele")
     ap.add_argument("--velocidade", type=float, default=None,
                     help="graus por segundo, enviado por SPEED ao conectar. "
                          "Sem isto vale a velocidade compilada no firmware "
@@ -261,6 +268,15 @@ def main() -> int:
                 print("       indisponível ou firmware antigo.\n")
         else:
             print("AVISO: Arduino não encontrado. Rodando só na simulação.\n")
+
+    # A correção radial é propriedade do OBJETO, não do braço: o objeto de
+    # teste muda mais do que o braco.json, e errar isto manda a garra fechar
+    # atrás da peça sem nada reclamar.
+    if args.deslocamento is not None:
+        params_dict["deslocamento_radial"] = args.deslocamento
+    if params_dict.get("deslocamento_radial"):
+        print(f"Correção radial: {params_dict['deslocamento_radial']:.0f} mm "
+              f"(meia profundidade do apoio do objeto).")
 
     controlador = ControladorColeta(
         serial, braco=braco, calib=calib, params=ParametrosColeta(**params_dict)
