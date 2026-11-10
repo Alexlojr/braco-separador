@@ -25,3 +25,6 @@ dataset/
 runs/
 *.pt
 !models/yolov8n.pt
+# Modelo treinado com as duas classes (peca, mouse): ~6 MB, versionado para
+# chegar ao Pi com git pull.
+!models/separador.pt
