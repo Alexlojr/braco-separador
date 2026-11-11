@@ -285,7 +285,14 @@
       "",
       "Como refinar: ponha a peca num ponto, rode coletar.py --dry-run, e",
       "compare o ponto corrigido que ele imprime com o CENTRO medido a",
-      "regua. A diferenca no raio entra aqui."
+      "regua. A diferenca no raio entra aqui.",
+      "",
+      "11/11/2026: 25 -> 35, ajustado na bancada com o modelo treinado. Com",
+      "25 a garra parava ~1 cm antes do tronco, sempre, e nao fechava",
+      "centrada. Os 10 mm extras sao o residuo de que o paragrafo acima",
+      "fala (a caixa desenhada no treino nao termina exatamente na linha de",
+      "contato) somado ao erro mecanico do braco estendido. E um ajuste",
+      "empirico unico para as duas classes; o mouse precisa conferir."
     ],
     "_soltar_na_pega": [
       "Corta o PWM da base, ombro e cotovelo enquanto a garra abre ou",
@@ -304,7 +311,11 @@
       "",
       "O ATTACH religa em atual[], que e a pose COMANDADA. Se o braco",
       "tiver escorregado, ele volta de uma vez - mais um motivo para o",
-      "intervalo ser curto."
+      "intervalo ser curto.",
+      "",
+      "11/11/2026: LIGADO. Com o deslocamento radial em 35 mm o braco pega",
+      "mais estendido, e a garra deixou de completar o fechamento - o",
+      "mesmo sintoma de tensao descrito na secao 5.3 do relatorio."
     ],
     "_raio_giro": [
       "Raio em que o braco gira a base carregando a peca. null gira onde",
@@ -376,8 +387,8 @@
     ],
     "soltar_garra_no_giro": true,
     "soltar_no_giro": true,
-    "soltar_na_pega": false,
-    "deslocamento_radial_mm": 25.0,
+    "soltar_na_pega": true,
+    "deslocamento_radial_mm": 35.0,
     "recuo_entrada_mm": 45.0,
     "recuo_minimo_mm": 25.0,
     "subida_entrada_mm": 5.0,
@@ -468,7 +479,7 @@
       "(--velocidade). Esta pausa e a margem para o que sobrar."
     ],
     "pausa_s": 0.6,
-    "pausa_garra_s": 0.5,
+    "pausa_garra_s": 1.0,
     "_garra": [
       "Angulos de servo da garra, em GRAUS. null usa o minimo/maximo da junta.",
       "Preencha os dois: qual extremo fecha depende de como a garra foi montada,",
