@@ -294,6 +294,11 @@ from src.arm.coleta import ParametrosColeta as PC  # noqa: E402
 # para o minimo/maximo da junta, independente do que a config traga hoje.
 base_params = {k: v for k, v in params_dict.items()
                if k not in ("garra_aberta", "garra_fechada")}
+# soltar_na_pega fica DESLIGADO aqui pelo mesmo motivo: o braco.json real o
+# liga desde 11/11, e ai o fechamento da garra vem junto com DETACH da base,
+# ombro e cotovelo. Os casos abaixo testam outra coisa; o soltar_na_pega tem
+# teste proprio mais adiante, ligado e desligado explicitamente.
+base_params["soltar_na_pega"] = False
 
 # sem configurar, cai no minimo/maximo da junta (comportamento antigo)
 s_pad = SerialEspiã()
@@ -348,8 +353,13 @@ except PoseInalcancavel as e:
 #      pouco acima do meio do tronco.
 import math as _math
 
+# O ponto da visao e escolhido para a PEGA cair a 160 mm, qualquer que seja
+# o deslocamento radial da config (com 35 mm, um y fixo de 160 levaria a
+# pega a 195 mm, fora do alcance).
+Y_VISAO_160 = 160.0 - base_params.get("deslocamento_radial", 0.0)
+
 c_lat = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**base_params))
-etapas_lat = c_lat.planejar(0.0, 160.0)
+etapas_lat = c_lat.planejar(0.0, Y_VISAO_160)
 
 def _angulos(etapa):
     """{canal: angulo} dos comandos SET de uma etapa."""
@@ -360,7 +370,8 @@ def _angulos(etapa):
             saida[int(partes[1])] = float(partes[2])
     return saida
 
-descida = next(e for e in etapas_lat if "ao lado" in e.descricao)
+# a descida e em degraus; o que se compara com a entrada e o ULTIMO degrau
+descida = [e for e in etapas_lat if "ao lado" in e.descricao][-1]
 entrada = next(e for e in etapas_lat if "tronco" in e.descricao)
 
 a_descida, a_entrada = _angulos(descida), _angulos(entrada)
@@ -524,8 +535,9 @@ soltos = {int(c.split()[1]) for c in cmds_giro if c.startswith("DETACH")}
 checa(soltos == {calib.ombro.canal, calib.cotovelo.canal},
       f"so com soltar_no_giro deveriam sair ombro e cotovelo, sairam {soltos}")
 
-# a BASE nunca sai do PWM, em configuracao nenhuma: e ela que gira, e soltar
-# e religar so perderia a referencia de posicao dela
+# a BASE nunca sai do PWM durante o giro: e ela que gira, e soltar e religar
+# so perderia a referencia de posicao dela. (Na pega, com soltar_na_pega,
+# ela sai de proposito e parada - isso e testado no bloco proprio.)
 for extra in ({}, {"soltar_garra_no_giro": True}):
     c_x = ControladorColeta(SerialEspiã(), braco=braco, calib=calib,
                             params=PC(**dict(base_params, soltar_no_giro=True, **extra)))
@@ -654,7 +666,7 @@ checa("ATTACH ALL" in muda.linhas,
 p_colado = dict(base_params, recuo_entrada=90.0, recuo_minimo=90.0)
 c_colado = ControladorColeta(SerialEspiã(), braco=braco, calib=calib, params=PC(**p_colado))
 try:
-    c_colado.planejar(0.0, 160.0)
+    c_colado.planejar(0.0, Y_VISAO_160)
     checa(False, "recuo minimo inalcancavel deveria levantar PoseInalcancavel")
 except PoseInalcancavel as e:
     checa(e.motivo == PoseInalcancavel.ENVELOPE,
